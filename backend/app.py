@@ -32,21 +32,22 @@ CORS(app)
 # Import models
 from models import FileRecord, ScanRecord, MediaFile, DuplicateGroup, DuplicateFile, StorageHistory, TrashBin
 
-# Register models with SQLAlchemy
-db.Model = FileRecord.__bases__[0]
-FileRecord.__table__.create(db.engine, checkfirst=True)
-ScanRecord.__table__.create(db.engine, checkfirst=True)
-MediaFile.__table__.create(db.engine, checkfirst=True)
-DuplicateGroup.__table__.create(db.engine, checkfirst=True)
-DuplicateFile.__table__.create(db.engine, checkfirst=True)
-StorageHistory.__table__.create(db.engine, checkfirst=True)
-TrashBin.__table__.create(db.engine, checkfirst=True)
+# Create database tables within application context
+with app.app_context():
+    # Register models with SQLAlchemy
+    db.Model = FileRecord.__bases__[0]
+    FileRecord.__table__.create(db.engine, checkfirst=True)
+    ScanRecord.__table__.create(db.engine, checkfirst=True)
+    MediaFile.__table__.create(db.engine, checkfirst=True)
+    DuplicateGroup.__table__.create(db.engine, checkfirst=True)
+    DuplicateFile.__table__.create(db.engine, checkfirst=True)
+    StorageHistory.__table__.create(db.engine, checkfirst=True)
+    TrashBin.__table__.create(db.engine, checkfirst=True)
+    logger.info("Database tables created")
 
 # Import routes and register them
 from routes import register_routes
 register_routes(app)
-
-logger.info("Database tables created")
 
 @app.route('/')
 def index():
