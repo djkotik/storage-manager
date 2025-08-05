@@ -148,6 +148,40 @@ def index():
     """Serve the main application"""
     return app.send_static_file('index.html')
 
+@app.route('/debug/static')
+def debug_static():
+    """Debug route to check static files"""
+    import os
+    static_dir = app.static_folder
+    files = []
+    if os.path.exists(static_dir):
+        for root, dirs, filenames in os.walk(static_dir):
+            for filename in filenames:
+                rel_path = os.path.relpath(os.path.join(root, filename), static_dir)
+                files.append(rel_path)
+    return jsonify({
+        'static_folder': static_dir,
+        'files': files,
+        'index_exists': os.path.exists(os.path.join(static_dir, 'index.html')) if static_dir else False
+    })
+
+@app.route('/debug/index')
+def debug_index():
+    """Debug route to check index.html content"""
+    try:
+        with open(os.path.join(app.static_folder, 'index.html'), 'r') as f:
+            content = f.read()
+        return jsonify({
+            'exists': True,
+            'length': len(content),
+            'preview': content[:500] + '...' if len(content) > 500 else content
+        })
+    except Exception as e:
+        return jsonify({
+            'exists': False,
+            'error': str(e)
+        })
+
 @app.route('/api/health')
 def health_check():
     """Health check endpoint"""
