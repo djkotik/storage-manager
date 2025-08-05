@@ -42,8 +42,9 @@ DuplicateFile.__table__.create(db.engine, checkfirst=True)
 StorageHistory.__table__.create(db.engine, checkfirst=True)
 TrashBin.__table__.create(db.engine, checkfirst=True)
 
-# Import routes after models are set up
-from routes import *
+# Import routes and register them
+from routes import register_routes
+register_routes(app)
 
 logger.info("Database tables created")
 
