@@ -51,7 +51,7 @@ class FileRecord(db.Model):
     __tablename__ = 'files'
     
     id = db.Column(db.Integer, primary_key=True)
-    path = db.Column(db.String(2000), nullable=False, unique=True)
+    path = db.Column(db.String(2000), nullable=False)
     name = db.Column(db.String(500), nullable=False)
     size = db.Column(db.Integer, nullable=False)  # Size in bytes
     is_directory = db.Column(db.Boolean, default=False)
@@ -349,6 +349,9 @@ def scan_directory(data_path, scan_id):
         except Exception as e:
             logger.error(f"Error during scan: {e}")
             scanner_state['error'] = str(e)
+            
+            # Rollback the session to clear any pending transaction
+            db.session.rollback()
             
             # Update scan record with error
             scan_record = ScanRecord.query.get(scan_id)
