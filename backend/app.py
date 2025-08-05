@@ -1,6 +1,8 @@
 import os
 import logging
 import shutil
+import threading
+import time
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -30,6 +32,18 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 # Initialize extensions
 db = SQLAlchemy(app)
 CORS(app)
+
+# Global scanner state
+scanner_state = {
+    'scanning': False,
+    'current_scan_id': None,
+    'start_time': None,
+    'total_files': 0,
+    'total_directories': 0,
+    'total_size': 0,
+    'current_path': '',
+    'error': None
+}
 
 # Define models directly in app.py to avoid circular imports
 class FileRecord(db.Model):
@@ -142,6 +156,126 @@ def format_size(size_bytes):
         i += 1
     return f"{size_bytes:.1f} {size_names[i]}"
 
+def scan_directory(data_path, scan_id):
+    """Scan directory and populate database"""
+    global scanner_state
+    
+    try:
+        logger.info(f"Starting scan of {data_path}")
+        scanner_state['scanning'] = True
+        scanner_state['current_scan_id'] = scan_id
+        scanner_state['start_time'] = datetime.now()
+        scanner_state['total_files'] = 0
+        scanner_state['total_directories'] = 0
+        scanner_state['total_size'] = 0
+        scanner_state['error'] = None
+        
+        # Clear existing files for this scan
+        FileRecord.query.filter_by(scan_id=scan_id).delete()
+        
+        for root, dirs, files in os.walk(data_path):
+            if not scanner_state['scanning']:
+                break
+                
+            scanner_state['current_path'] = root
+            
+            # Process directories
+            for dir_name in dirs:
+                try:
+                    dir_path = os.path.join(root, dir_name)
+                    if os.path.exists(dir_path):
+                        # Get directory stats
+                        stat = os.stat(dir_path)
+                        
+                        # Create directory record
+                        dir_record = FileRecord(
+                            path=dir_path,
+                            name=dir_name,
+                            size=0,  # Will calculate later
+                            is_directory=True,
+                            parent_path=root,
+                            created_time=datetime.fromtimestamp(stat.st_ctime),
+                            modified_time=datetime.fromtimestamp(stat.st_mtime),
+                            accessed_time=datetime.fromtimestamp(stat.st_atime),
+                            permissions=oct(stat.st_mode)[-3:],
+                            scan_id=scan_id
+                        )
+                        db.session.add(dir_record)
+                        scanner_state['total_directories'] += 1
+                except (OSError, PermissionError) as e:
+                    logger.warning(f"Error accessing directory {dir_path}: {e}")
+                    continue
+            
+            # Process files
+            for file_name in files:
+                try:
+                    file_path = os.path.join(root, file_name)
+                    if os.path.exists(file_path):
+                        # Get file stats
+                        stat = os.stat(file_path)
+                        file_size = stat.st_size
+                        
+                        # Get file extension
+                        _, extension = os.path.splitext(file_name)
+                        extension = extension.lower() if extension else None
+                        
+                        # Create file record
+                        file_record = FileRecord(
+                            path=file_path,
+                            name=file_name,
+                            size=file_size,
+                            is_directory=False,
+                            parent_path=root,
+                            extension=extension,
+                            created_time=datetime.fromtimestamp(stat.st_ctime),
+                            modified_time=datetime.fromtimestamp(stat.st_mtime),
+                            accessed_time=datetime.fromtimestamp(stat.st_atime),
+                            permissions=oct(stat.st_mode)[-3:],
+                            scan_id=scan_id
+                        )
+                        db.session.add(file_record)
+                        scanner_state['total_files'] += 1
+                        scanner_state['total_size'] += file_size
+                except (OSError, PermissionError) as e:
+                    logger.warning(f"Error accessing file {file_path}: {e}")
+                    continue
+            
+            # Commit periodically
+            if scanner_state['total_files'] % 100 == 0:
+                db.session.commit()
+                logger.info(f"Processed {scanner_state['total_files']} files, {scanner_state['total_directories']} directories")
+        
+        # Final commit
+        db.session.commit()
+        
+        # Update scan record
+        scan_record = ScanRecord.query.get(scan_id)
+        if scan_record:
+            scan_record.end_time = datetime.now()
+            scan_record.total_files = scanner_state['total_files']
+            scan_record.total_directories = scanner_state['total_directories']
+            scan_record.total_size = scanner_state['total_size']
+            scan_record.status = 'completed'
+            db.session.commit()
+        
+        logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
+        
+    except Exception as e:
+        logger.error(f"Error during scan: {e}")
+        scanner_state['error'] = str(e)
+        
+        # Update scan record with error
+        scan_record = ScanRecord.query.get(scan_id)
+        if scan_record:
+            scan_record.end_time = datetime.now()
+            scan_record.status = 'failed'
+            scan_record.error_message = str(e)
+            db.session.commit()
+    
+    finally:
+        scanner_state['scanning'] = False
+        scanner_state['current_path'] = ''
+
 # Routes
 @app.route('/')
 def index():
@@ -227,10 +361,29 @@ def reset_database():
 def start_scan():
     """Start a new scan"""
     try:
-        # For now, just return success - scanner implementation will come later
+        if scanner_state['scanning']:
+            return jsonify({'error': 'Scan already in progress'}), 400
+        
+        # Create scan record
+        scan_record = ScanRecord(
+            start_time=datetime.now(),
+            status='running'
+        )
+        db.session.add(scan_record)
+        db.session.commit()
+        
+        # Start scan in background thread
+        data_path = os.environ.get('DATA_PATH', '/data')
+        scan_thread = threading.Thread(
+            target=scan_directory,
+            args=(data_path, scan_record.id)
+        )
+        scan_thread.daemon = True
+        scan_thread.start()
+        
         return jsonify({
             'message': 'Scan started successfully',
-            'scan_id': 1
+            'scan_id': scan_record.id
         })
     except Exception as e:
         logger.error(f"Error starting scan: {e}")
@@ -240,6 +393,7 @@ def start_scan():
 def stop_scan():
     """Stop the current scan"""
     try:
+        scanner_state['scanning'] = False
         return jsonify({'message': 'Scan stop requested'})
     except Exception as e:
         logger.error(f"Error stopping scan: {e}")
@@ -250,9 +404,16 @@ def get_scan_status():
     """Get current scan status"""
     try:
         return jsonify({
-            'status': 'idle',
-            'current_scan': None,
-            'last_scan': None
+            'status': 'scanning' if scanner_state['scanning'] else 'idle',
+            'scanning': scanner_state['scanning'],
+            'scan_id': scanner_state['current_scan_id'],
+            'start_time': scanner_state['start_time'].isoformat() if scanner_state['start_time'] else None,
+            'total_files': scanner_state['total_files'],
+            'total_directories': scanner_state['total_directories'],
+            'total_size': scanner_state['total_size'],
+            'total_size_formatted': format_size(scanner_state['total_size']),
+            'current_path': scanner_state['current_path'],
+            'error': scanner_state['error']
         })
     except Exception as e:
         logger.error(f"Error getting scan status: {e}")
@@ -349,18 +510,26 @@ def get_files():
 def get_file_tree():
     """Get hierarchical file tree"""
     try:
-        # This is a simplified implementation
-        # In a real app, you'd build a proper tree structure
-        directories = FileRecord.query.filter_by(is_directory=True).limit(100).all()
+        # Get all directories sorted by size
+        directories = db.session.query(
+            FileRecord,
+            func.sum(FileRecord.size).label('total_size')
+        ).filter(
+            FileRecord.is_directory == True
+        ).group_by(
+            FileRecord.parent_path
+        ).order_by(
+            desc(func.sum(FileRecord.size))
+        ).limit(100).all()
         
         tree = []
-        for directory in directories:
+        for directory, total_size in directories:
             tree.append({
                 'id': directory.id,
                 'name': directory.name,
                 'path': directory.path,
-                'size': directory.size,
-                'size_formatted': format_size(directory.size),
+                'size': total_size or 0,
+                'size_formatted': format_size(total_size or 0),
                 'children': []  # Would be populated with actual children
             })
         
@@ -446,7 +615,7 @@ def get_media_files():
         resolution = request.args.get('resolution', '')
         search = request.args.get('search', '')
         
-        query = MediaFile.query.join(FileRecord)
+        query = MediaFile.query
         
         # Apply filters
         if media_type:
@@ -538,6 +707,60 @@ def get_trash_bin():
     except Exception as e:
         logger.error(f"Error getting trash bin: {e}")
         return jsonify({'error': 'Failed to get trash bin'}), 500
+
+@app.route('/api/logs')
+def get_logs():
+    """Get recent application logs"""
+    try:
+        lines = request.args.get('lines', 50, type=int)
+        
+        # Read the log file
+        log_file = '/app/logs/app.log'
+        logs = []
+        
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                # Get the last N lines
+                lines_list = f.readlines()
+                recent_lines = lines_list[-lines:] if len(lines_list) > lines else lines_list
+                
+                for line in recent_lines:
+                    # Parse log line to extract timestamp and message
+                    if ' - ' in line:
+                        parts = line.split(' - ', 2)
+                        if len(parts) >= 3:
+                            timestamp = parts[0]
+                            level = parts[1]
+                            message = parts[2].strip()
+                            
+                            logs.append({
+                                'timestamp': timestamp,
+                                'level': level,
+                                'message': message,
+                                'raw': line.strip()
+                            })
+                        else:
+                            logs.append({
+                                'timestamp': '',
+                                'level': 'INFO',
+                                'message': line.strip(),
+                                'raw': line.strip()
+                            })
+                    else:
+                        logs.append({
+                            'timestamp': '',
+                            'level': 'INFO',
+                            'message': line.strip(),
+                            'raw': line.strip()
+                        })
+        
+        return jsonify({
+            'logs': logs,
+            'total_lines': len(logs)
+        })
+    except Exception as e:
+        logger.error(f"Error getting logs: {e}")
+        return jsonify({'error': 'Failed to get logs'}), 500
 
 @app.route('/api/trash/<int:item_id>/restore', methods=['POST'])
 def restore_file(item_id):
