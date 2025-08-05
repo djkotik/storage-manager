@@ -11,6 +11,14 @@ RUN npm run build
 FROM python:3.11-alpine AS backend-builder
 
 WORKDIR /app
+
+# Install build dependencies for psutil
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    python3-dev \
+    && rm -rf /var/cache/apk/*
+
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
