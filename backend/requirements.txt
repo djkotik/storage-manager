@@ -8,6 +8,4 @@ psutil==5.9.5
 mutagen==1.47.0
 Pillow==10.0.1
 requests==2.31.0
-schedule==1.2.0
-hashlib-compat==1.0.0
-pathlib2==2.3.7 
+schedule==1.2.0 
