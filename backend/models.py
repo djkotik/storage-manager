@@ -4,7 +4,8 @@ from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
-class FileRecord(Base):
+# We'll use a different approach - define models without inheritance first
+class FileRecord:
     """Model for storing file information"""
     __tablename__ = 'files'
     
@@ -30,7 +31,7 @@ class FileRecord(Base):
         Index('idx_scan_id', 'scan_id'),
     )
 
-class ScanRecord(Base):
+class ScanRecord:
     """Model for storing scan sessions"""
     __tablename__ = 'scans'
     
@@ -49,7 +50,7 @@ class ScanRecord(Base):
         Index('idx_status', 'status'),
     )
 
-class MediaFile(Base):
+class MediaFile:
     """Model for storing media file metadata"""
     __tablename__ = 'media_files'
     
@@ -78,7 +79,7 @@ class MediaFile(Base):
         Index('idx_resolution', 'resolution'),
     )
 
-class DuplicateGroup(Base):
+class DuplicateGroup:
     """Model for storing duplicate file groups"""
     __tablename__ = 'duplicate_groups'
     
@@ -94,7 +95,7 @@ class DuplicateGroup(Base):
         Index('idx_size', 'size'),
     )
 
-class DuplicateFile(Base):
+class DuplicateFile:
     """Model for storing individual duplicate files"""
     __tablename__ = 'duplicate_files'
     
@@ -112,7 +113,7 @@ class DuplicateFile(Base):
         Index('idx_hash', 'hash_value'),
     )
 
-class StorageHistory(Base):
+class StorageHistory:
     """Model for storing storage usage over time"""
     __tablename__ = 'storage_history'
     
@@ -127,7 +128,7 @@ class StorageHistory(Base):
         Index('idx_date', 'date'),
     )
 
-class TrashBin(Base):
+class TrashBin:
     """Model for storing deleted files (for undo functionality)"""
     __tablename__ = 'trash_bin'
     

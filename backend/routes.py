@@ -4,7 +4,6 @@ import logging
 from datetime import datetime, timedelta
 from flask import jsonify, request, send_file, current_app
 from sqlalchemy import func, desc
-from app import FileRecord, ScanRecord, MediaFile, DuplicateGroup, DuplicateFile, StorageHistory, TrashBin, db
 from scanner import FileScanner
 
 logger = logging.getLogger(__name__)
@@ -44,6 +43,16 @@ def get_directory_size(path):
 
 def register_routes(app):
     """Register all routes with the Flask app"""
+    
+    # Import models from current_app to avoid circular imports
+    FileRecord = current_app.db.Model._decl_class_registry.get('FileRecord')
+    ScanRecord = current_app.db.Model._decl_class_registry.get('ScanRecord')
+    MediaFile = current_app.db.Model._decl_class_registry.get('MediaFile')
+    DuplicateGroup = current_app.db.Model._decl_class_registry.get('DuplicateGroup')
+    DuplicateFile = current_app.db.Model._decl_class_registry.get('DuplicateFile')
+    StorageHistory = current_app.db.Model._decl_class_registry.get('StorageHistory')
+    TrashBin = current_app.db.Model._decl_class_registry.get('TrashBin')
+    db = current_app.db
     
     @app.route('/api/scan/start', methods=['POST'])
     def start_scan():

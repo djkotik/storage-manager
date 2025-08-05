@@ -160,121 +160,123 @@ def scan_directory(data_path, scan_id):
     """Scan directory and populate database"""
     global scanner_state
     
-    try:
-        logger.info(f"Starting scan of {data_path}")
-        scanner_state['scanning'] = True
-        scanner_state['current_scan_id'] = scan_id
-        scanner_state['start_time'] = datetime.now()
-        scanner_state['total_files'] = 0
-        scanner_state['total_directories'] = 0
-        scanner_state['total_size'] = 0
-        scanner_state['error'] = None
-        
-        # Clear existing files for this scan
-        FileRecord.query.filter_by(scan_id=scan_id).delete()
-        
-        for root, dirs, files in os.walk(data_path):
-            if not scanner_state['scanning']:
-                break
+    # Create application context for database operations
+    with app.app_context():
+        try:
+            logger.info(f"Starting scan of {data_path}")
+            scanner_state['scanning'] = True
+            scanner_state['current_scan_id'] = scan_id
+            scanner_state['start_time'] = datetime.now()
+            scanner_state['total_files'] = 0
+            scanner_state['total_directories'] = 0
+            scanner_state['total_size'] = 0
+            scanner_state['error'] = None
+            
+            # Clear existing files for this scan
+            FileRecord.query.filter_by(scan_id=scan_id).delete()
+            
+            for root, dirs, files in os.walk(data_path):
+                if not scanner_state['scanning']:
+                    break
+                    
+                scanner_state['current_path'] = root
                 
-            scanner_state['current_path'] = root
+                # Process directories
+                for dir_name in dirs:
+                    try:
+                        dir_path = os.path.join(root, dir_name)
+                        if os.path.exists(dir_path):
+                            # Get directory stats
+                            stat = os.stat(dir_path)
+                            
+                            # Create directory record
+                            dir_record = FileRecord(
+                                path=dir_path,
+                                name=dir_name,
+                                size=0,  # Will calculate later
+                                is_directory=True,
+                                parent_path=root,
+                                created_time=datetime.fromtimestamp(stat.st_ctime),
+                                modified_time=datetime.fromtimestamp(stat.st_mtime),
+                                accessed_time=datetime.fromtimestamp(stat.st_atime),
+                                permissions=oct(stat.st_mode)[-3:],
+                                scan_id=scan_id
+                            )
+                            db.session.add(dir_record)
+                            scanner_state['total_directories'] += 1
+                    except (OSError, PermissionError) as e:
+                        logger.warning(f"Error accessing directory {dir_path}: {e}")
+                        continue
+                
+                # Process files
+                for file_name in files:
+                    try:
+                        file_path = os.path.join(root, file_name)
+                        if os.path.exists(file_path):
+                            # Get file stats
+                            stat = os.stat(file_path)
+                            file_size = stat.st_size
+                            
+                            # Get file extension
+                            _, extension = os.path.splitext(file_name)
+                            extension = extension.lower() if extension else None
+                            
+                            # Create file record
+                            file_record = FileRecord(
+                                path=file_path,
+                                name=file_name,
+                                size=file_size,
+                                is_directory=False,
+                                parent_path=root,
+                                extension=extension,
+                                created_time=datetime.fromtimestamp(stat.st_ctime),
+                                modified_time=datetime.fromtimestamp(stat.st_mtime),
+                                accessed_time=datetime.fromtimestamp(stat.st_atime),
+                                permissions=oct(stat.st_mode)[-3:],
+                                scan_id=scan_id
+                            )
+                            db.session.add(file_record)
+                            scanner_state['total_files'] += 1
+                            scanner_state['total_size'] += file_size
+                    except (OSError, PermissionError) as e:
+                        logger.warning(f"Error accessing file {file_path}: {e}")
+                        continue
+                
+                # Commit periodically
+                if scanner_state['total_files'] % 100 == 0:
+                    db.session.commit()
+                    logger.info(f"Processed {scanner_state['total_files']} files, {scanner_state['total_directories']} directories")
             
-            # Process directories
-            for dir_name in dirs:
-                try:
-                    dir_path = os.path.join(root, dir_name)
-                    if os.path.exists(dir_path):
-                        # Get directory stats
-                        stat = os.stat(dir_path)
-                        
-                        # Create directory record
-                        dir_record = FileRecord(
-                            path=dir_path,
-                            name=dir_name,
-                            size=0,  # Will calculate later
-                            is_directory=True,
-                            parent_path=root,
-                            created_time=datetime.fromtimestamp(stat.st_ctime),
-                            modified_time=datetime.fromtimestamp(stat.st_mtime),
-                            accessed_time=datetime.fromtimestamp(stat.st_atime),
-                            permissions=oct(stat.st_mode)[-3:],
-                            scan_id=scan_id
-                        )
-                        db.session.add(dir_record)
-                        scanner_state['total_directories'] += 1
-                except (OSError, PermissionError) as e:
-                    logger.warning(f"Error accessing directory {dir_path}: {e}")
-                    continue
+            # Final commit
+            db.session.commit()
             
-            # Process files
-            for file_name in files:
-                try:
-                    file_path = os.path.join(root, file_name)
-                    if os.path.exists(file_path):
-                        # Get file stats
-                        stat = os.stat(file_path)
-                        file_size = stat.st_size
-                        
-                        # Get file extension
-                        _, extension = os.path.splitext(file_name)
-                        extension = extension.lower() if extension else None
-                        
-                        # Create file record
-                        file_record = FileRecord(
-                            path=file_path,
-                            name=file_name,
-                            size=file_size,
-                            is_directory=False,
-                            parent_path=root,
-                            extension=extension,
-                            created_time=datetime.fromtimestamp(stat.st_ctime),
-                            modified_time=datetime.fromtimestamp(stat.st_mtime),
-                            accessed_time=datetime.fromtimestamp(stat.st_atime),
-                            permissions=oct(stat.st_mode)[-3:],
-                            scan_id=scan_id
-                        )
-                        db.session.add(file_record)
-                        scanner_state['total_files'] += 1
-                        scanner_state['total_size'] += file_size
-                except (OSError, PermissionError) as e:
-                    logger.warning(f"Error accessing file {file_path}: {e}")
-                    continue
-            
-            # Commit periodically
-            if scanner_state['total_files'] % 100 == 0:
+            # Update scan record
+            scan_record = ScanRecord.query.get(scan_id)
+            if scan_record:
+                scan_record.end_time = datetime.now()
+                scan_record.total_files = scanner_state['total_files']
+                scan_record.total_directories = scanner_state['total_directories']
+                scan_record.total_size = scanner_state['total_size']
+                scan_record.status = 'completed'
                 db.session.commit()
-                logger.info(f"Processed {scanner_state['total_files']} files, {scanner_state['total_directories']} directories")
+            
+            logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
+            
+        except Exception as e:
+            logger.error(f"Error during scan: {e}")
+            scanner_state['error'] = str(e)
+            
+            # Update scan record with error
+            scan_record = ScanRecord.query.get(scan_id)
+            if scan_record:
+                scan_record.end_time = datetime.now()
+                scan_record.status = 'failed'
+                scan_record.error_message = str(e)
+                db.session.commit()
         
-        # Final commit
-        db.session.commit()
-        
-        # Update scan record
-        scan_record = ScanRecord.query.get(scan_id)
-        if scan_record:
-            scan_record.end_time = datetime.now()
-            scan_record.total_files = scanner_state['total_files']
-            scan_record.total_directories = scanner_state['total_directories']
-            scan_record.total_size = scanner_state['total_size']
-            scan_record.status = 'completed'
-            db.session.commit()
-        
-        logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
-        
-    except Exception as e:
-        logger.error(f"Error during scan: {e}")
-        scanner_state['error'] = str(e)
-        
-        # Update scan record with error
-        scan_record = ScanRecord.query.get(scan_id)
-        if scan_record:
-            scan_record.end_time = datetime.now()
-            scan_record.status = 'failed'
-            scan_record.error_message = str(e)
-            db.session.commit()
-    
-    finally:
-        scanner_state['scanning'] = False
-        scanner_state['current_path'] = ''
+        finally:
+            scanner_state['scanning'] = False
+            scanner_state['current_path'] = ''
 
 # Routes
 @app.route('/')
