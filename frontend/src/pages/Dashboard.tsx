@@ -16,26 +16,17 @@ interface ScanStatus {
 }
 
 interface AnalyticsOverview {
-  latest_scan: {
-    id: number
-    end_time: string
-    total_files: number
-    total_directories: number
-    total_size: number
-    total_size_formatted: string
-  }
-  file_types: Array<{
+  total_files: number
+  total_directories: number
+  total_size: number
+  total_size_formatted: string
+  top_extensions: Array<{
     extension: string
     count: number
     total_size: number
     total_size_formatted: string
   }>
-  media_stats: Array<{
-    type: string
-    count: number
-    total_size: number
-    total_size_formatted: string
-  }>
+  media_files: number
 }
 
 const Dashboard: React.FC = () => {
@@ -166,7 +157,7 @@ const Dashboard: React.FC = () => {
                   Total Storage
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.latest_scan.total_size_formatted}
+                  {analytics.total_size_formatted}
                 </p>
               </div>
             </div>
@@ -182,7 +173,7 @@ const Dashboard: React.FC = () => {
                   Total Files
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.latest_scan.total_files.toLocaleString()}
+                  {analytics.total_files.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -198,7 +189,7 @@ const Dashboard: React.FC = () => {
                   Directories
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.latest_scan.total_directories.toLocaleString()}
+                  {analytics.total_directories.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -214,7 +205,7 @@ const Dashboard: React.FC = () => {
                   Media Files
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.media_stats.reduce((sum, stat) => sum + stat.count, 0).toLocaleString()}
+                  {analytics.media_files.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -230,7 +221,7 @@ const Dashboard: React.FC = () => {
               Top File Types
             </h3>
             <div className="space-y-3">
-              {analytics.file_types.slice(0, 10).map((fileType) => (
+              {analytics.top_extensions.slice(0, 10).map((fileType) => (
                 <div key={fileType.extension} className="flex items-center justify-between">
                   <div className="flex items-center">
                     <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
@@ -253,60 +244,79 @@ const Dashboard: React.FC = () => {
 
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Media Breakdown
+              Storage Overview
             </h3>
             <div className="space-y-3">
-              {analytics.media_stats.map((mediaStat) => (
-                <div key={mediaStat.type} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-purple-500 rounded-full mr-3"></div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
-                      {mediaStat.type}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {mediaStat.total_size_formatted}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {mediaStat.count.toLocaleString()} files
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-purple-500 rounded-full mr-3"></div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Total Files
+                  </span>
                 </div>
-              ))}
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {analytics.total_files.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Total Directories
+                  </span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {analytics.total_directories.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Media Files
+                  </span>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {analytics.media_files.toLocaleString()}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Last Scan Info */}
-      {analytics && (
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Last Scan Information
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Scan ID</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                #{analytics.latest_scan.id}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Completed</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                {formatDistanceToNow(new Date(analytics.latest_scan.end_time), { addSuffix: true })}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Size</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                {analytics.latest_scan.total_size_formatted}
-              </p>
-            </div>
+      {/* System Status */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          System Status
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Scan Status</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {scanStatus.scanning ? 'Scanning...' : 'Idle'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Last Updated</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {new Date().toLocaleTimeString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Data Path</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              /data
+            </p>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
