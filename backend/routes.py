@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from flask import jsonify, request, send_file, current_app
 from sqlalchemy import func, desc
-from models import FileRecord, ScanRecord, MediaFile, DuplicateGroup, DuplicateFile, StorageHistory, TrashBin
+from app import FileRecord, ScanRecord, MediaFile, DuplicateGroup, DuplicateFile, StorageHistory, TrashBin, db
 from scanner import FileScanner
 
 logger = logging.getLogger(__name__)
@@ -198,10 +198,10 @@ def register_routes(app):
             # Get total stats
             total_files = FileRecord.query.filter_by(is_directory=False).count()
             total_directories = FileRecord.query.filter_by(is_directory=True).count()
-            total_size = current_app.db.session.query(func.sum(FileRecord.size)).scalar() or 0
+            total_size = db.session.query(func.sum(FileRecord.size)).scalar() or 0
             
             # Get top file types
-            top_extensions = current_app.db.session.query(
+            top_extensions = db.session.query(
                 FileRecord.extension,
                 func.count(FileRecord.id).label('count'),
                 func.sum(FileRecord.size).label('total_size')
@@ -325,8 +325,8 @@ def register_routes(app):
                 trash_entry.original_path = trash_path
             
             # Save to database
-            current_app.db.session.add(trash_entry)
-            current_app.db.session.commit()
+            db.session.add(trash_entry)
+            db.session.commit()
             
             return jsonify({'message': 'File moved to trash successfully'})
         except Exception as e:
@@ -375,7 +375,7 @@ def register_routes(app):
                 # For now, just mark as restored
                 # In a real implementation, you'd move it back
                 trash_item.restored = True
-                current_app.db.session.commit()
+                db.session.commit()
                 
                 return jsonify({'message': 'File restored successfully'})
             else:
