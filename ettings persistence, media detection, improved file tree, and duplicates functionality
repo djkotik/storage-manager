@@ -1,0 +1,5 @@
+[33m425f007[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m Fix Flask application context error in scan_directory function
+[33m979af60[m Add working scanner, logs panel, and improved Files page with folder tree
+[33m86dadaa[m Fix Dashboard component to match actual API response structure
+[33m0447203[m Add debug routes to check static files
+[33m5891912[m Move all routes into app.py to eliminate circular imports

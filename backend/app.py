@@ -128,6 +128,15 @@ class StorageHistory(db.Model):
     file_count = db.Column(db.Integer, default=0)
     directory_count = db.Column(db.Integer, default=0)
 
+class Settings(db.Model):
+    """Model for storing application settings"""
+    __tablename__ = 'settings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), nullable=False, unique=True)
+    value = db.Column(db.String(500), nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 class TrashBin(db.Model):
     """Model for storing deleted files (for undo functionality)"""
     __tablename__ = 'trash_bin'
@@ -155,6 +164,55 @@ def format_size(size_bytes):
         size_bytes /= 1024.0
         i += 1
     return f"{size_bytes:.1f} {size_names[i]}"
+
+def get_setting(key, default=None):
+    """Get a setting value from database"""
+    try:
+        setting = Settings.query.filter_by(key=key).first()
+        return setting.value if setting else default
+    except Exception as e:
+        logger.error(f"Error getting setting {key}: {e}")
+        return default
+
+def set_setting(key, value):
+    """Set a setting value in database"""
+    try:
+        setting = Settings.query.filter_by(key=key).first()
+        if setting:
+            setting.value = value
+            setting.updated_at = datetime.utcnow()
+        else:
+            setting = Settings(key=key, value=value)
+            db.session.add(setting)
+        db.session.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error setting {key}: {e}")
+        return False
+
+def is_media_file(file_path, extension):
+    """Determine if a file is a media file based on extension and path"""
+    media_extensions = {
+        # Video
+        '.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp',
+        # Audio
+        '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a',
+        # Images
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
+        # Other media
+        '.iso', '.img'
+    }
+    
+    if extension and extension.lower() in media_extensions:
+        return True
+    
+    # Check for media-related directories in path
+    media_keywords = ['movie', 'movies', 'tv', 'television', 'show', 'shows', 
+                     'music', 'audio', 'photo', 'photos', 'image', 'images',
+                     'video', 'videos', 'media']
+    
+    path_lower = file_path.lower()
+    return any(keyword in path_lower for keyword in media_keywords)
 
 def scan_directory(data_path, scan_id):
     """Scan directory and populate database"""
@@ -221,23 +279,49 @@ def scan_directory(data_path, scan_id):
                             _, extension = os.path.splitext(file_name)
                             extension = extension.lower() if extension else None
                             
-                            # Create file record
-                            file_record = FileRecord(
-                                path=file_path,
-                                name=file_name,
-                                size=file_size,
-                                is_directory=False,
-                                parent_path=root,
-                                extension=extension,
-                                created_time=datetime.fromtimestamp(stat.st_ctime),
-                                modified_time=datetime.fromtimestamp(stat.st_mtime),
-                                accessed_time=datetime.fromtimestamp(stat.st_atime),
-                                permissions=oct(stat.st_mode)[-3:],
-                                scan_id=scan_id
+                                                    # Create file record
+                        file_record = FileRecord(
+                            path=file_path,
+                            name=file_name,
+                            size=file_size,
+                            is_directory=False,
+                            parent_path=root,
+                            extension=extension,
+                            created_time=datetime.fromtimestamp(stat.st_ctime),
+                            modified_time=datetime.fromtimestamp(stat.st_mtime),
+                            accessed_time=datetime.fromtimestamp(stat.st_atime),
+                            permissions=oct(stat.st_mode)[-3:],
+                            scan_id=scan_id
+                        )
+                        db.session.add(file_record)
+                        db.session.flush()  # Get the file record ID
+                        
+                        # Check if this is a media file
+                        if is_media_file(file_path, extension):
+                            # Determine media type based on extension and path
+                            media_type = 'other'
+                            if extension and extension.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg']:
+                                media_type = 'image'
+                            elif extension and extension.lower() in ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp']:
+                                # Check if it's a TV show (has season/episode patterns)
+                                if any(keyword in file_path.lower() for keyword in ['season', 'episode', 's0', 'e0']):
+                                    media_type = 'tv_show'
+                                else:
+                                    media_type = 'movie'
+                            elif extension and extension.lower() in ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a']:
+                                media_type = 'music'
+                            
+                            # Create media file record
+                            media_record = MediaFile(
+                                file_id=file_record.id,
+                                media_type=media_type,
+                                title=file_name,
+                                file_format=extension
                             )
-                            db.session.add(file_record)
-                            scanner_state['total_files'] += 1
-                            scanner_state['total_size'] += file_size
+                            db.session.add(media_record)
+                        
+                        scanner_state['total_files'] += 1
+                        scanner_state['total_size'] += file_size
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                         continue
@@ -332,18 +416,28 @@ def health_check():
 def get_settings():
     """Get application settings"""
     return jsonify({
-        'data_path': os.environ.get('DATA_PATH', '/data'),
-        'scan_time': os.environ.get('SCAN_TIME', '01:00'),
-        'max_scan_duration': int(os.environ.get('MAX_SCAN_DURATION', 6)),
+        'data_path': get_setting('data_path', os.environ.get('DATA_PATH', '/data')),
+        'scan_time': get_setting('scan_time', '01:00'),
+        'max_scan_duration': int(get_setting('max_scan_duration', '6')),
+        'theme': get_setting('theme', 'unraid'),
         'themes': ['unraid', 'plex', 'dark', 'light']
     })
 
 @app.route('/api/settings', methods=['POST'])
 def update_settings():
     """Update application settings"""
-    data = request.get_json()
-    # In a real implementation, you'd save these to a config file or database
-    return jsonify({'message': 'Settings updated successfully'})
+    try:
+        data = request.get_json()
+        
+        # Update settings in database
+        for key, value in data.items():
+            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme']:
+                set_setting(key, str(value))
+        
+        return jsonify({'message': 'Settings updated successfully'})
+    except Exception as e:
+        logger.error(f"Error updating settings: {e}")
+        return jsonify({'error': 'Failed to update settings'}), 500
 
 @app.route('/api/database/reset', methods=['POST'])
 def reset_database():
@@ -510,35 +604,77 @@ def get_files():
 
 @app.route('/api/files/tree')
 def get_file_tree():
-    """Get hierarchical file tree"""
+    """Get hierarchical file tree - top level shares"""
     try:
-        # Get all directories sorted by size
-        directories = db.session.query(
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        
+        # Get top-level directories (shares) sorted by total size
+        shares = db.session.query(
             FileRecord,
-            func.sum(FileRecord.size).label('total_size')
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('file_count')
         ).filter(
-            FileRecord.is_directory == True
+            FileRecord.is_directory == True,
+            FileRecord.parent_path == data_path
         ).group_by(
-            FileRecord.parent_path
+            FileRecord.id
         ).order_by(
             desc(func.sum(FileRecord.size))
-        ).limit(100).all()
+        ).all()
         
         tree = []
-        for directory, total_size in directories:
+        for share, total_size, file_count in shares:
             tree.append({
-                'id': directory.id,
-                'name': directory.name,
-                'path': directory.path,
+                'id': share.id,
+                'name': share.name,
+                'path': share.path,
                 'size': total_size or 0,
                 'size_formatted': format_size(total_size or 0),
-                'children': []  # Would be populated with actual children
+                'file_count': file_count,
+                'is_directory': True,
+                'children': []  # Will be populated when expanded
             })
         
         return jsonify({'tree': tree})
     except Exception as e:
         logger.error(f"Error getting file tree: {e}")
         return jsonify({'error': 'Failed to get file tree'}), 500
+
+@app.route('/api/files/tree/<int:directory_id>')
+def get_directory_children(directory_id):
+    """Get children of a specific directory"""
+    try:
+        directory = FileRecord.query.get_or_404(directory_id)
+        
+        # Get direct children of this directory
+        children = db.session.query(
+            FileRecord,
+            func.sum(FileRecord.size).label('total_size')
+        ).filter(
+            FileRecord.parent_path == directory.path,
+            FileRecord.is_directory == True
+        ).group_by(
+            FileRecord.id
+        ).order_by(
+            desc(func.sum(FileRecord.size))
+        ).all()
+        
+        result = []
+        for child, total_size in children:
+            result.append({
+                'id': child.id,
+                'name': child.name,
+                'path': child.path,
+                'size': total_size or 0,
+                'size_formatted': format_size(total_size or 0),
+                'is_directory': True,
+                'children': []
+            })
+        
+        return jsonify({'children': result})
+    except Exception as e:
+        logger.error(f"Error getting directory children: {e}")
+        return jsonify({'error': 'Failed to get directory children'}), 500
 
 @app.route('/api/analytics/overview')
 def get_analytics_overview():
@@ -561,8 +697,17 @@ def get_analytics_overview():
             desc(func.sum(FileRecord.size))
         ).limit(10).all()
         
-        # Get media breakdown
-        media_files = MediaFile.query.count()
+        # Get media breakdown by type
+        media_counts = db.session.query(
+            MediaFile.media_type,
+            func.count(MediaFile.id).label('count')
+        ).group_by(MediaFile.media_type).all()
+        
+        media_breakdown = {}
+        total_media = 0
+        for media_type, count in media_counts:
+            media_breakdown[media_type] = count
+            total_media += count
         
         return jsonify({
             'total_files': total_files,
@@ -575,11 +720,45 @@ def get_analytics_overview():
                 'total_size': ext.total_size,
                 'total_size_formatted': format_size(ext.total_size)
             } for ext in top_extensions],
-            'media_files': media_files
+            'media_files': total_media,
+            'media_breakdown': media_breakdown
         })
     except Exception as e:
         logger.error(f"Error getting analytics overview: {e}")
         return jsonify({'error': 'Failed to get analytics overview'}), 500
+
+@app.route('/api/analytics/top-shares')
+def get_top_shares():
+    """Get top folder shares by size"""
+    try:
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        
+        # Get top-level directories (shares) sorted by total size
+        top_shares = db.session.query(
+            FileRecord,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('file_count')
+        ).filter(
+            FileRecord.is_directory == True,
+            FileRecord.parent_path == data_path
+        ).group_by(
+            FileRecord.id
+        ).order_by(
+            desc(func.sum(FileRecord.size))
+        ).limit(10).all()
+        
+        return jsonify({
+            'top_shares': [{
+                'name': share.name,
+                'path': share.path,
+                'size': total_size or 0,
+                'size_formatted': format_size(total_size or 0),
+                'file_count': file_count
+            } for share, total_size, file_count in top_shares]
+        })
+    except Exception as e:
+        logger.error(f"Error getting top shares: {e}")
+        return jsonify({'error': 'Failed to get top shares'}), 500
 
 @app.route('/api/analytics/history')
 def get_storage_history():
@@ -620,14 +799,24 @@ def get_media_files():
         query = MediaFile.query
         
         # Apply filters
-        if media_type:
+        if media_type and media_type != 'all':
             query = query.filter(MediaFile.media_type == media_type)
-        if resolution:
+        if resolution and resolution != 'all':
             query = query.filter(MediaFile.resolution == resolution)
         if search:
             query = query.filter(MediaFile.title.ilike(f'%{search}%'))
         
         media_files = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        # Get counts by media type
+        media_counts = db.session.query(
+            MediaFile.media_type,
+            func.count(MediaFile.id).label('count')
+        ).group_by(MediaFile.media_type).all()
+        
+        counts = {}
+        for media_type, count in media_counts:
+            counts[media_type] = count
         
         return jsonify({
             'media_files': [{
@@ -640,11 +829,13 @@ def get_media_files():
                 'audio_codec': media.audio_codec,
                 'runtime': media.runtime,
                 'file_size': media.file_id and FileRecord.query.get(media.file_id).size or 0,
-                'file_size_formatted': media.file_id and format_size(FileRecord.query.get(media.file_id).size) or '0 B'
+                'file_size_formatted': media.file_id and format_size(FileRecord.query.get(media.file_id).size) or '0 B',
+                'path': media.file_id and FileRecord.query.get(media.file_id).path or ''
             } for media in media_files.items],
             'total': media_files.total,
             'pages': media_files.pages,
-            'current_page': media_files.page
+            'current_page': media_files.page,
+            'counts': counts
         })
     except Exception as e:
         logger.error(f"Error getting media files: {e}")
@@ -786,6 +977,109 @@ def restore_file(item_id):
     except Exception as e:
         logger.error(f"Error restoring file: {e}")
         return jsonify({'error': 'Failed to restore file'}), 500
+
+@app.route('/api/duplicates')
+def get_duplicates():
+    """Get duplicate files grouped by hash"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        
+        # Get duplicate groups with file count and total size
+        duplicate_groups = db.session.query(
+            DuplicateGroup,
+            func.count(DuplicateFile.id).label('file_count'),
+            func.sum(FileRecord.size).label('total_size')
+        ).join(
+            DuplicateFile, DuplicateGroup.id == DuplicateFile.group_id
+        ).join(
+            FileRecord, DuplicateFile.file_id == FileRecord.id
+        ).group_by(
+            DuplicateGroup.id
+        ).order_by(
+            desc(func.sum(FileRecord.size))
+        ).paginate(page=page, per_page=per_page, error_out=False)
+        
+        result = []
+        for group, file_count, total_size in duplicate_groups.items:
+            # Get individual files in this group
+            files = db.session.query(
+                FileRecord, DuplicateFile
+            ).join(
+                DuplicateFile, FileRecord.id == DuplicateFile.file_id
+            ).filter(
+                DuplicateFile.group_id == group.id
+            ).all()
+            
+            group_files = []
+            for file_record, duplicate_file in files:
+                group_files.append({
+                    'id': file_record.id,
+                    'name': file_record.name,
+                    'path': file_record.path,
+                    'size': file_record.size,
+                    'size_formatted': format_size(file_record.size),
+                    'is_primary': duplicate_file.is_primary,
+                    'is_deleted': duplicate_file.is_deleted
+                })
+            
+            result.append({
+                'id': group.id,
+                'hash': group.hash_value,
+                'size': group.size,
+                'size_formatted': format_size(group.size),
+                'file_count': file_count,
+                'total_size': total_size,
+                'total_size_formatted': format_size(total_size),
+                'files': group_files
+            })
+        
+        return jsonify({
+            'duplicates': result,
+            'total': duplicate_groups.total,
+            'pages': duplicate_groups.pages,
+            'current_page': duplicate_groups.page
+        })
+    except Exception as e:
+        logger.error(f"Error getting duplicates: {e}")
+        return jsonify({'error': 'Failed to get duplicates'}), 500
+
+@app.route('/api/duplicates/<int:group_id>/delete/<int:file_id>', methods=['POST'])
+def delete_duplicate_file(group_id, file_id):
+    """Delete a specific duplicate file"""
+    try:
+        duplicate_file = DuplicateFile.query.filter_by(
+            group_id=group_id, file_id=file_id
+        ).first_or_404()
+        
+        file_record = FileRecord.query.get_or_404(file_id)
+        
+        # Create trash bin entry
+        trash_entry = TrashBin(
+            original_path=file_record.path,
+            original_size=file_record.size,
+            expires_at=datetime.now() + timedelta(days=30)  # 30 days
+        )
+        
+        # Move file to trash directory
+        trash_dir = '/app/data/trash'
+        os.makedirs(trash_dir, exist_ok=True)
+        
+        trash_path = os.path.join(trash_dir, f"{file_record.id}_{file_record.name}")
+        
+        if os.path.exists(file_record.path):
+            shutil.move(file_record.path, trash_path)
+            trash_entry.original_path = trash_path
+        
+        # Mark as deleted in database
+        duplicate_file.is_deleted = True
+        db.session.add(trash_entry)
+        db.session.commit()
+        
+        return jsonify({'message': 'Duplicate file deleted successfully'})
+    except Exception as e:
+        logger.error(f"Error deleting duplicate file: {e}")
+        return jsonify({'error': 'Failed to delete duplicate file'}), 500
 
 if __name__ == '__main__':
     # Ensure data directory exists

@@ -10,7 +10,8 @@ import {
   X,
   Sun,
   Moon,
-  Palette
+  Palette,
+  Copy
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -28,6 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Files', href: '/files', icon: FolderOpen },
     { name: 'Media', href: '/media', icon: Video },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+    { name: 'Duplicates', href: '/duplicates', icon: Copy },
     { name: 'Settings', href: '/settings', icon: Settings },
   ]
 

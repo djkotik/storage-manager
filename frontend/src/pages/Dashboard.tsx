@@ -31,6 +31,14 @@ interface AnalyticsOverview {
   media_files: number
 }
 
+interface TopShare {
+  name: string
+  path: string
+  size: number
+  size_formatted: string
+  file_count: number
+}
+
 interface LogEntry {
   timestamp: string
   level: string
@@ -41,6 +49,7 @@ interface LogEntry {
 const Dashboard: React.FC = () => {
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ status: 'idle', scanning: false })
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null)
+  const [topShares, setTopShares] = useState<TopShare[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [scanLoading, setScanLoading] = useState(false)
@@ -53,15 +62,19 @@ const Dashboard: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [statusRes, analyticsRes, logsRes] = await Promise.all([
+      const [statusRes, analyticsRes, topSharesRes, logsRes] = await Promise.all([
         axios.get('/api/scan/status'),
         axios.get('/api/analytics/overview').catch(() => null),
+        axios.get('/api/analytics/top-shares').catch(() => null),
         axios.get('/api/logs?lines=20').catch(() => null)
       ])
       
       setScanStatus(statusRes.data)
       if (analyticsRes) {
         setAnalytics(analyticsRes.data)
+      }
+      if (topSharesRes) {
+        setTopShares(topSharesRes.data.top_shares)
       }
       if (logsRes) {
         setLogs(logsRes.data.logs)
@@ -283,36 +296,33 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Live Logs */}
+        {/* Top Folder Shares */}
         <div className="card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Live Logs
-            </h3>
-            <button
-              onClick={fetchData}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="bg-gray-900 text-green-400 p-3 rounded-md font-mono text-xs h-64 overflow-y-auto">
-            {logs.length > 0 ? (
-              logs.map((log, index) => (
-                <div key={index} className="mb-1">
-                  <span className={getLogLevelColor(log.level)}>
-                    [{log.level}]
-                  </span>
-                  <span className="text-gray-400 ml-2">
-                    {log.timestamp}
-                  </span>
-                  <span className="text-white ml-2">
-                    {log.message}
-                  </span>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Top Folder Shares
+          </h3>
+          <div className="space-y-3">
+            {topShares.length > 0 ? (
+              topShares.map((share) => (
+                <div key={share.path} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {share.name}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {share.size_formatted}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {share.file_count.toLocaleString()} files
+                    </p>
+                  </div>
                 </div>
               ))
             ) : (
-              <div className="text-gray-500">No logs available</div>
+              <div className="text-gray-500">No shares found</div>
             )}
           </div>
         </div>
@@ -342,6 +352,40 @@ const Dashboard: React.FC = () => {
               /data
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Live Logs - Full Width */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Live Logs
+          </h3>
+          <button
+            onClick={fetchData}
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="bg-gray-900 text-green-400 p-3 rounded-md font-mono text-xs h-64 overflow-y-auto">
+          {logs.length > 0 ? (
+            logs.map((log, index) => (
+              <div key={index} className="mb-1">
+                <span className={getLogLevelColor(log.level)}>
+                  [{log.level}]
+                </span>
+                <span className="text-gray-400 ml-2">
+                  {log.timestamp}
+                </span>
+                <span className="text-white ml-2">
+                  {log.message}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="text-gray-500">No logs available</div>
+          )}
         </div>
       </div>
     </div>
