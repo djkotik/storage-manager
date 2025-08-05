@@ -1,11 +1,10 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, Index
 from sqlalchemy.ext.declarative import declarative_base
-from app import db
 
 Base = declarative_base()
 
-class FileRecord(db.Model):
+class FileRecord(Base):
     """Model for storing file information"""
     __tablename__ = 'files'
     
@@ -20,7 +19,7 @@ class FileRecord(db.Model):
     modified_time = Column(DateTime)
     accessed_time = Column(DateTime)
     permissions = Column(String(20))
-    scan_id = Column(Integer, db.ForeignKey('scans.id'))
+    scan_id = Column(Integer)
     
     # Indexes for performance
     __table_args__ = (
@@ -31,7 +30,7 @@ class FileRecord(db.Model):
         Index('idx_scan_id', 'scan_id'),
     )
 
-class ScanRecord(db.Model):
+class ScanRecord(Base):
     """Model for storing scan sessions"""
     __tablename__ = 'scans'
     
@@ -50,12 +49,12 @@ class ScanRecord(db.Model):
         Index('idx_status', 'status'),
     )
 
-class MediaFile(db.Model):
+class MediaFile(Base):
     """Model for storing media file metadata"""
     __tablename__ = 'media_files'
     
     id = Column(Integer, primary_key=True)
-    file_id = Column(Integer, db.ForeignKey('files.id'), unique=True)
+    file_id = Column(Integer)
     media_type = Column(String(20))  # movie, tv_show, music, other
     title = Column(String(500))
     year = Column(Integer)
@@ -79,7 +78,7 @@ class MediaFile(db.Model):
         Index('idx_resolution', 'resolution'),
     )
 
-class DuplicateGroup(db.Model):
+class DuplicateGroup(Base):
     """Model for storing duplicate file groups"""
     __tablename__ = 'duplicate_groups'
     
@@ -95,13 +94,13 @@ class DuplicateGroup(db.Model):
         Index('idx_size', 'size'),
     )
 
-class DuplicateFile(db.Model):
+class DuplicateFile(Base):
     """Model for storing individual duplicate files"""
     __tablename__ = 'duplicate_files'
     
     id = Column(Integer, primary_key=True)
-    file_id = Column(Integer, db.ForeignKey('files.id'))
-    group_id = Column(Integer, db.ForeignKey('duplicate_groups.id'))
+    file_id = Column(Integer)
+    group_id = Column(Integer)
     hash_value = Column(String(64), nullable=False)
     is_primary = Column(Boolean, default=False)  # Marked as keep
     is_deleted = Column(Boolean, default=False)
@@ -113,7 +112,7 @@ class DuplicateFile(db.Model):
         Index('idx_hash', 'hash_value'),
     )
 
-class StorageHistory(db.Model):
+class StorageHistory(Base):
     """Model for storing storage usage over time"""
     __tablename__ = 'storage_history'
     
@@ -128,7 +127,7 @@ class StorageHistory(db.Model):
         Index('idx_date', 'date'),
     )
 
-class TrashBin(db.Model):
+class TrashBin(Base):
     """Model for storing deleted files (for undo functionality)"""
     __tablename__ = 'trash_bin'
     

@@ -29,14 +29,23 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 db = SQLAlchemy(app)
 CORS(app)
 
-# Import models and routes after db initialization
-from models import *
+# Import models
+from models import FileRecord, ScanRecord, MediaFile, DuplicateGroup, DuplicateFile, StorageHistory, TrashBin
+
+# Register models with SQLAlchemy
+db.Model = FileRecord.__bases__[0]
+FileRecord.__table__.create(db.engine, checkfirst=True)
+ScanRecord.__table__.create(db.engine, checkfirst=True)
+MediaFile.__table__.create(db.engine, checkfirst=True)
+DuplicateGroup.__table__.create(db.engine, checkfirst=True)
+DuplicateFile.__table__.create(db.engine, checkfirst=True)
+StorageHistory.__table__.create(db.engine, checkfirst=True)
+TrashBin.__table__.create(db.engine, checkfirst=True)
+
+# Import routes after models are set up
 from routes import *
 
-# Create database tables
-with app.app_context():
-    db.create_all()
-    logger.info("Database tables created")
+logger.info("Database tables created")
 
 @app.route('/')
 def index():
