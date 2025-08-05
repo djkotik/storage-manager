@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { 
   HardDrive, 
@@ -14,6 +14,7 @@ import {
   Copy
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import axios from 'axios'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -21,24 +22,61 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [availableThemes, setAvailableThemes] = useState([
+    { name: 'unRAID', value: 'unraid' },
+    { name: 'Plex', value: 'plex' },
+    { name: 'Dark', value: 'dark' },
+    { name: 'Light', value: 'light' },
+  ])
   const location = useLocation()
   const { theme, setTheme, isDark } = useTheme()
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: HardDrive },
-    { name: 'Files', href: '/files', icon: FolderOpen },
+    { name: 'Usage Explorer', href: '/files', icon: FolderOpen },
     { name: 'Media', href: '/media', icon: Video },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'Duplicates', href: '/duplicates', icon: Copy },
     { name: 'Settings', href: '/settings', icon: Settings },
   ]
 
-  const themes = [
-    { name: 'unRAID', value: 'unraid' },
-    { name: 'Plex', value: 'plex' },
-    { name: 'Dark', value: 'dark' },
-    { name: 'Light', value: 'light' },
-  ]
+  // Fetch settings and sync theme
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await axios.get('/api/settings')
+        const settings = response.data
+        
+        // Update available themes from backend
+        if (settings.themes) {
+          setAvailableThemes(settings.themes.map((themeValue: string) => ({
+            name: themeValue.charAt(0).toUpperCase() + themeValue.slice(1),
+            value: themeValue
+          })))
+        }
+        
+        // Sync theme with backend
+        if (settings.theme && settings.theme !== theme) {
+          setTheme(settings.theme)
+        }
+      } catch (error) {
+        console.error('Error fetching settings:', error)
+      }
+    }
+    
+    fetchSettings()
+  }, [theme, setTheme])
+
+  const handleThemeChange = async (newTheme: string) => {
+    try {
+      // Update backend settings
+      await axios.post('/api/settings', { theme: newTheme })
+      // Update local theme
+      setTheme(newTheme as any)
+    } catch (error) {
+      console.error('Error updating theme:', error)
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -122,10 +160,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 )}
                 <select
                   value={theme}
-                  onChange={(e) => setTheme(e.target.value as any)}
+                  onChange={(e) => handleThemeChange(e.target.value)}
                   className="text-sm bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300"
                 >
-                  {themes.map((themeOption) => (
+                  {availableThemes.map((themeOption) => (
                     <option key={themeOption.value} value={themeOption.value}>
                       {themeOption.name}
                     </option>
@@ -157,10 +195,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Palette className="h-4 w-4 text-gray-400" />
                 <select
                   value={theme}
-                  onChange={(e) => setTheme(e.target.value as any)}
+                  onChange={(e) => handleThemeChange(e.target.value)}
                   className="text-sm bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300"
                 >
-                  {themes.map((themeOption) => (
+                  {availableThemes.map((themeOption) => (
                     <option key={themeOption.value} value={themeOption.value}>
                       {themeOption.name}
                     </option>

@@ -611,29 +611,32 @@ def get_file_tree():
         # Get top-level directories (shares) sorted by total size
         shares = db.session.query(
             FileRecord,
-            func.sum(FileRecord.size).label('total_size'),
             func.count(FileRecord.id).label('file_count')
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.id
-        ).order_by(
-            desc(func.sum(FileRecord.size))
         ).all()
         
         tree = []
-        for share, total_size, file_count in shares:
+        for share, file_count in shares:
+            # Calculate total size of all files within this directory
+            total_size = db.session.query(func.sum(FileRecord.size)).filter(
+                FileRecord.path.like(f"{share.path}/%")
+            ).scalar() or 0
+            
             tree.append({
                 'id': share.id,
                 'name': share.name,
                 'path': share.path,
-                'size': total_size or 0,
-                'size_formatted': format_size(total_size or 0),
+                'size': total_size,
+                'size_formatted': format_size(total_size),
                 'file_count': file_count,
                 'is_directory': True,
                 'children': []  # Will be populated when expanded
             })
+        
+        # Sort by total size
+        tree.sort(key=lambda x: x['size'], reverse=True)
         
         return jsonify({'tree': tree})
     except Exception as e:
@@ -648,28 +651,31 @@ def get_directory_children(directory_id):
         
         # Get direct children of this directory
         children = db.session.query(
-            FileRecord,
-            func.sum(FileRecord.size).label('total_size')
+            FileRecord
         ).filter(
             FileRecord.parent_path == directory.path,
             FileRecord.is_directory == True
-        ).group_by(
-            FileRecord.id
-        ).order_by(
-            desc(func.sum(FileRecord.size))
         ).all()
         
         result = []
-        for child, total_size in children:
+        for child in children:
+            # Calculate total size of all files within this subdirectory
+            total_size = db.session.query(func.sum(FileRecord.size)).filter(
+                FileRecord.path.like(f"{child.path}/%")
+            ).scalar() or 0
+            
             result.append({
                 'id': child.id,
                 'name': child.name,
                 'path': child.path,
-                'size': total_size or 0,
-                'size_formatted': format_size(total_size or 0),
+                'size': total_size,
+                'size_formatted': format_size(total_size),
                 'is_directory': True,
                 'children': []
             })
+        
+        # Sort by total size
+        result.sort(key=lambda x: x['size'], reverse=True)
         
         return jsonify({'children': result})
     except Exception as e:
@@ -733,28 +739,36 @@ def get_top_shares():
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         
-        # Get top-level directories (shares) sorted by total size
-        top_shares = db.session.query(
+        # Get top-level directories (shares)
+        shares = db.session.query(
             FileRecord,
-            func.sum(FileRecord.size).label('total_size'),
             func.count(FileRecord.id).label('file_count')
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.id
-        ).order_by(
-            desc(func.sum(FileRecord.size))
-        ).limit(10).all()
+        ).all()
         
-        return jsonify({
-            'top_shares': [{
+        top_shares = []
+        for share, file_count in shares:
+            # Calculate total size of all files within this directory
+            total_size = db.session.query(func.sum(FileRecord.size)).filter(
+                FileRecord.path.like(f"{share.path}/%")
+            ).scalar() or 0
+            
+            top_shares.append({
                 'name': share.name,
                 'path': share.path,
-                'size': total_size or 0,
-                'size_formatted': format_size(total_size or 0),
+                'size': total_size,
+                'size_formatted': format_size(total_size),
                 'file_count': file_count
-            } for share, total_size, file_count in top_shares]
+            })
+        
+        # Sort by total size and take top 10
+        top_shares.sort(key=lambda x: x['size'], reverse=True)
+        top_shares = top_shares[:10]
+        
+        return jsonify({
+            'top_shares': top_shares
         })
     except Exception as e:
         logger.error(f"Error getting top shares: {e}")

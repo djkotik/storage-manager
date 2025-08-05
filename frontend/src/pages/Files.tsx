@@ -13,6 +13,7 @@ interface FileItem {
   modified_time?: string
   permissions?: string
   children?: FileItem[]
+  file_count?: number
 }
 
 interface FileTree {
@@ -24,6 +25,7 @@ const Files: React.FC = () => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
+  const [loadingChildren, setLoadingChildren] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     fetchFileTree()
@@ -41,12 +43,49 @@ const Files: React.FC = () => {
     }
   }
 
-  const toggleFolder = (folderPath: string) => {
+  const fetchDirectoryChildren = async (directoryId: number, directoryPath: string) => {
+    try {
+      setLoadingChildren(prev => new Set(prev).add(directoryId))
+      const response = await axios.get(`/api/files/tree/${directoryId}`)
+      
+      // Update the file tree to include the children
+      setFileTree(prevTree => {
+        const updateTree = (items: FileItem[]): FileItem[] => {
+          return items.map(item => {
+            if (item.id === directoryId) {
+              return {
+                ...item,
+                children: response.data.children
+              }
+            }
+            return item
+          })
+        }
+        return updateTree(prevTree)
+      })
+    } catch (error) {
+      console.error('Error fetching directory children:', error)
+    } finally {
+      setLoadingChildren(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(directoryId)
+        return newSet
+      })
+    }
+  }
+
+  const toggleFolder = async (item: FileItem) => {
+    const isExpanded = expandedFolders.has(item.path)
     const newExpanded = new Set(expandedFolders)
-    if (newExpanded.has(folderPath)) {
-      newExpanded.delete(folderPath)
+    
+    if (isExpanded) {
+      newExpanded.delete(item.path)
     } else {
-      newExpanded.add(folderPath)
+      newExpanded.add(item.path)
+      // Fetch children if not already loaded
+      if (!item.children || item.children.length === 0) {
+        await fetchDirectoryChildren(item.id, item.path)
+      }
     }
     setExpandedFolders(newExpanded)
   }
@@ -54,6 +93,7 @@ const Files: React.FC = () => {
   const renderFileItem = (item: FileItem, level: number = 0) => {
     const isExpanded = expandedFolders.has(item.path)
     const hasChildren = item.children && item.children.length > 0
+    const isLoading = loadingChildren.has(item.id)
 
     return (
       <div key={item.id} className="select-none">
@@ -64,7 +104,7 @@ const Files: React.FC = () => {
           style={{ paddingLeft: `${level * 20 + 8}px` }}
           onClick={() => {
             if (item.is_directory) {
-              toggleFolder(item.path)
+              toggleFolder(item)
             } else {
               setSelectedFile(item)
             }
@@ -76,10 +116,12 @@ const Files: React.FC = () => {
                 className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                 onClick={(e) => {
                   e.stopPropagation()
-                  toggleFolder(item.path)
+                  toggleFolder(item)
                 }}
               >
-                {isExpanded ? (
+                {isLoading ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                ) : isExpanded ? (
                   <ChevronDown className="h-4 w-4" />
                 ) : (
                   <ChevronRight className="h-4 w-4" />
@@ -95,9 +137,15 @@ const Files: React.FC = () => {
             {item.name}
           </span>
           
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="text-xs text-gray-500 dark:text-gray-400 mr-2">
             {item.size_formatted}
           </span>
+          
+          {item.file_count && (
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              ({item.file_count} files)
+            </span>
+          )}
         </div>
         
         {item.is_directory && isExpanded && hasChildren && (
@@ -123,10 +171,10 @@ const Files: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Files
+            Usage Explorer
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Browse your storage structure
+            Explore your storage structure and space usage
           </p>
         </div>
         
@@ -192,6 +240,15 @@ const Files: React.FC = () => {
                     {selectedFile.size_formatted}
                   </p>
                 </div>
+                
+                {selectedFile.file_count && (
+                  <div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Files</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {selectedFile.file_count}
+                    </p>
+                  </div>
+                )}
                 
                 {selectedFile.extension && (
                   <div>
