@@ -31,21 +31,27 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const isDark = theme === 'dark' || theme === 'plex'
 
   const setTheme = (newTheme: Theme) => {
+    console.log('Setting theme to:', newTheme) // Debug log
     setThemeState(newTheme)
     localStorage.setItem('theme', newTheme)
   }
 
   useEffect(() => {
     const root = document.documentElement
+    console.log('Applying theme:', theme) // Debug log
     
     // Remove all theme classes
-    root.classList.remove('theme-unraid', 'theme-plex', 'dark')
+    root.classList.remove('theme-unraid', 'theme-plex', 'theme-dark', 'theme-light', 'dark')
     
     // Add the current theme class
     if (theme === 'unraid') {
       root.classList.add('theme-unraid')
     } else if (theme === 'plex') {
       root.classList.add('theme-plex')
+    } else if (theme === 'dark') {
+      root.classList.add('theme-dark')
+    } else if (theme === 'light') {
+      root.classList.add('theme-light')
     }
     
     // Add dark class for dark themes

@@ -5,13 +5,13 @@ import {
   FolderOpen, 
   Video, 
   BarChart3, 
+  Copy, 
   Settings, 
   Menu, 
-  X,
-  Sun,
-  Moon,
+  Sun, 
+  Moon, 
   Palette,
-  Copy
+  X
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import axios from 'axios'
@@ -46,13 +46,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       try {
         const response = await axios.get('/api/settings')
         const settings = response.data
+        console.log('Fetched settings:', settings) // Debug log
         
         // Update available themes from backend
-        if (settings.themes) {
-          setAvailableThemes(settings.themes.map((themeValue: string) => ({
+        if (settings.themes && Array.isArray(settings.themes)) {
+          const themes = settings.themes.map((themeValue: string) => ({
             name: themeValue.charAt(0).toUpperCase() + themeValue.slice(1),
             value: themeValue
-          })))
+          }))
+          setAvailableThemes(themes)
+          console.log('Updated available themes:', themes) // Debug log
         }
         
         // Sync theme with backend
@@ -69,6 +72,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const handleThemeChange = async (newTheme: string) => {
     try {
+      console.log('Changing theme to:', newTheme) // Debug log
       // Update backend settings
       await axios.post('/api/settings', { theme: newTheme })
       // Update local theme
@@ -161,7 +165,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <select
                   value={theme}
                   onChange={(e) => handleThemeChange(e.target.value)}
-                  className="text-sm bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300"
+                  className="text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   {availableThemes.map((themeOption) => (
                     <option key={themeOption.value} value={themeOption.value}>
@@ -196,7 +200,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <select
                   value={theme}
                   onChange={(e) => handleThemeChange(e.target.value)}
-                  className="text-sm bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300"
+                  className="text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   {availableThemes.map((themeOption) => (
                     <option key={themeOption.value} value={themeOption.value}>

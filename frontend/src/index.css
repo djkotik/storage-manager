@@ -79,4 +79,141 @@
   --card-foreground: 248 250 252;
   --border: 51 65 85;
   --input: 51 65 85;
+}
+
+/* Light theme */
+.theme-light {
+  --primary: 59 130 246;
+  --primary-foreground: 255 255 255;
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --input: 226 232 240;
+  --ring: 59 130 246;
+}
+
+/* Dark theme */
+.theme-dark {
+  --primary: 59 130 246;
+  --primary-foreground: 255 255 255;
+  --background: 15 23 42;
+  --foreground: 248 250 252;
+  --card: 30 41 59;
+  --card-foreground: 248 250 252;
+  --border: 51 65 85;
+  --input: 51 65 85;
+  --ring: 59 130 246;
+}
+
+/* Enhanced theme styles with better color schemes */
+.theme-unraid {
+  color-scheme: light;
+}
+
+.theme-unraid .bg-blue-600 {
+  background-color: rgb(14 165 233);
+}
+
+.theme-unraid .text-blue-600 {
+  color: rgb(14 165 233);
+}
+
+.theme-unraid .border-blue-500 {
+  border-color: rgb(14 165 233);
+}
+
+.theme-unraid .ring-blue-500 {
+  --tw-ring-color: rgb(14 165 233);
+}
+
+.theme-plex {
+  color-scheme: light;
+}
+
+.theme-plex .bg-blue-600 {
+  background-color: rgb(217 70 239);
+}
+
+.theme-plex .text-blue-600 {
+  color: rgb(217 70 239);
+}
+
+.theme-plex .border-blue-500 {
+  border-color: rgb(217 70 239);
+}
+
+.theme-plex .ring-blue-500 {
+  --tw-ring-color: rgb(217 70 239);
+}
+
+/* Light theme overrides */
+.theme-light .bg-blue-600 {
+  background-color: rgb(59 130 246);
+}
+
+.theme-light .text-blue-600 {
+  color: rgb(59 130 246);
+}
+
+.theme-light .border-blue-500 {
+  border-color: rgb(59 130 246);
+}
+
+.theme-light .ring-blue-500 {
+  --tw-ring-color: rgb(59 130 246);
+}
+
+/* Dark theme overrides */
+.theme-dark .bg-blue-600 {
+  background-color: rgb(59 130 246);
+}
+
+.theme-dark .text-blue-600 {
+  color: rgb(59 130 246);
+}
+
+.theme-dark .border-blue-500 {
+  border-color: rgb(59 130 246);
+}
+
+.theme-dark .ring-blue-500 {
+  --tw-ring-color: rgb(59 130 246);
+}
+
+/* Dark theme overrides */
+.dark.theme-unraid .bg-gray-800 {
+  background-color: rgb(15 23 42);
+}
+
+.dark.theme-unraid .bg-gray-700 {
+  background-color: rgb(30 41 59);
+}
+
+.dark.theme-unraid .border-gray-700 {
+  border-color: rgb(51 65 85);
+}
+
+.dark.theme-plex .bg-gray-800 {
+  background-color: rgb(15 23 42);
+}
+
+.dark.theme-plex .bg-gray-700 {
+  background-color: rgb(30 41 59);
+}
+
+.dark.theme-plex .border-gray-700 {
+  border-color: rgb(51 65 85);
+}
+
+/* Ensure dropdown options are visible */
+select option {
+  background-color: white;
+  color: black;
+}
+
+.dark select option {
+  background-color: rgb(51 65 85);
+  color: white;
 } 
