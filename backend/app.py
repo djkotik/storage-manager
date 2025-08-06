@@ -740,6 +740,7 @@ def get_file_tree():
     """Get hierarchical file tree - top level shares"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        logger.info(f"Getting file tree for data_path: {data_path}")
         
         # Get top-level directories (shares) sorted by total size
         shares = db.session.query(
@@ -749,6 +750,10 @@ def get_file_tree():
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
         ).all()
+        
+        logger.info(f"Found {len(shares)} top-level directories")
+        for share, file_count in shares:
+            logger.info(f"Directory: {share.name}, path: {share.path}, scan_id: {share.scan_id}")
         
         tree = []
         for share, file_count in shares:
@@ -771,6 +776,7 @@ def get_file_tree():
         # Sort by total size
         tree.sort(key=lambda x: x['size'], reverse=True)
         
+        logger.info(f"Returning {len(tree)} items in tree")
         return jsonify({'tree': tree})
     except Exception as e:
         logger.error(f"Error getting file tree: {e}")
@@ -871,6 +877,7 @@ def get_top_shares():
     """Get top folder shares by size"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        logger.info(f"Getting top shares for data_path: {data_path}")
         
         # Get top-level directories (shares)
         shares = db.session.query(
@@ -880,6 +887,10 @@ def get_top_shares():
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
         ).all()
+        
+        logger.info(f"Found {len(shares)} top-level directories for top shares")
+        for share, file_count in shares:
+            logger.info(f"Top share: {share.name}, path: {share.path}, scan_id: {share.scan_id}")
         
         top_shares = []
         for share, file_count in shares:
@@ -900,6 +911,7 @@ def get_top_shares():
         top_shares.sort(key=lambda x: x['size'], reverse=True)
         top_shares = top_shares[:10]
         
+        logger.info(f"Returning {len(top_shares)} top shares")
         return jsonify({
             'top_shares': top_shares
         })
