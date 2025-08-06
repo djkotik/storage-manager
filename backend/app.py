@@ -749,6 +749,19 @@ def get_file_tree():
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
+        ).group_by(
+            FileRecord.id,
+            FileRecord.path,
+            FileRecord.name,
+            FileRecord.size,
+            FileRecord.is_directory,
+            FileRecord.parent_path,
+            FileRecord.extension,
+            FileRecord.created_time,
+            FileRecord.modified_time,
+            FileRecord.accessed_time,
+            FileRecord.permissions,
+            FileRecord.scan_id
         ).all()
         
         logger.info(f"Found {len(shares)} top-level directories")
@@ -790,14 +803,28 @@ def get_directory_children(directory_id):
         
         # Get direct children of this directory
         children = db.session.query(
-            FileRecord
+            FileRecord,
+            func.count(FileRecord.id).label('file_count')
         ).filter(
             FileRecord.parent_path == directory.path,
             FileRecord.is_directory == True
+        ).group_by(
+            FileRecord.id,
+            FileRecord.path,
+            FileRecord.name,
+            FileRecord.size,
+            FileRecord.is_directory,
+            FileRecord.parent_path,
+            FileRecord.extension,
+            FileRecord.created_time,
+            FileRecord.modified_time,
+            FileRecord.accessed_time,
+            FileRecord.permissions,
+            FileRecord.scan_id
         ).all()
         
         result = []
-        for child in children:
+        for child, file_count in children:
             # Calculate total size of all files within this subdirectory
             total_size = db.session.query(func.sum(FileRecord.size)).filter(
                 FileRecord.path.like(f"{child.path}/%")
@@ -809,6 +836,7 @@ def get_directory_children(directory_id):
                 'path': child.path,
                 'size': total_size,
                 'size_formatted': format_size(total_size),
+                'file_count': file_count,
                 'is_directory': True,
                 'children': []
             })
@@ -886,6 +914,19 @@ def get_top_shares():
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
+        ).group_by(
+            FileRecord.id,
+            FileRecord.path,
+            FileRecord.name,
+            FileRecord.size,
+            FileRecord.is_directory,
+            FileRecord.parent_path,
+            FileRecord.extension,
+            FileRecord.created_time,
+            FileRecord.modified_time,
+            FileRecord.accessed_time,
+            FileRecord.permissions,
+            FileRecord.scan_id
         ).all()
         
         logger.info(f"Found {len(shares)} top-level directories for top shares")
@@ -963,7 +1004,12 @@ def get_media_files():
         if resolution and resolution != 'all':
             query = query.filter(MediaFile.resolution == resolution)
         if search:
-            query = query.filter(MediaFile.title.ilike(f'%{search}%'))
+            query = query.filter(
+                db.or_(
+                    MediaFile.title.ilike(f'%{search}%'),
+                    MediaFile.episode_title.ilike(f'%{search}%')
+                )
+            )
         
         media_files = query.paginate(page=page, per_page=per_page, error_out=False)
         
