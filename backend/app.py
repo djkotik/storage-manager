@@ -48,7 +48,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
-app = Flask(__name__, static_folder='static', static_url_path='')
+app = Flask(__name__) # Removed static_folder and static_url_path
 
 # Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////app/data/storage_analyzer.db'
@@ -56,6 +56,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 # Initialize extensions
+
+# Define the path to the built frontend files
+FRONTEND_DIST_DIR = os.path.join(app.root_path, 'static') # This should be /app/static in Docker
 db = SQLAlchemy(app)
 CORS(app)
 
@@ -490,10 +493,11 @@ def scan_directory(data_path, scan_id):
 def index():
     """Serve the main application"""
     try:
-        return app.send_static_file('index.html')
-    except Exception as e:
+        logger.info(f"Attempting to serve index.html from: {FRONTEND_DIST_DIR}")
+        return send_from_directory(FRONTEND_DIST_DIR, 'index.html')
+    except FileNotFoundError:
         # If static files are not available, return a simple HTML page
-        logger.warning(f"Static files not found: {e}")
+        logger.warning(f"Static files not found in {FRONTEND_DIST_DIR}")
         html_content = """
 <!DOCTYPE html>
 <html lang="en">
@@ -552,7 +556,7 @@ def index():
 def debug_static():
     """Debug route to check static files"""
     import os
-    static_dir = app.static_folder
+    static_dir = FRONTEND_DIST_DIR
     files = []
     if os.path.exists(static_dir):
         for root, dirs, filenames in os.walk(static_dir):
@@ -569,18 +573,36 @@ def debug_static():
 def debug_index():
     """Debug route to check index.html content"""
     try:
-        with open(os.path.join(app.static_folder, 'index.html'), 'r') as f:
+        with open(os.path.join(FRONTEND_DIST_DIR, 'index.html'), 'r') as f:
             content = f.read()
         return jsonify({
             'exists': True,
             'length': len(content),
             'preview': content[:500] + '...' if len(content) > 500 else content
         })
+    except FileNotFoundError:
+        return jsonify({
+            'exists': False,
+            'error': 'index.html not found in static folder'
+        })
     except Exception as e:
         return jsonify({
             'exists': False,
             'error': str(e)
         })
+
+# Route for serving static assets (JS, CSS, images, etc.)
+@app.route('/<path:filename>')
+def serve_static(filename):
+    """Serve static files from the built frontend."""
+    logger.info(f"Attempting to serve static file: {filename} from {FRONTEND_DIST_DIR}")
+    try:
+        return send_from_directory(FRONTEND_DIST_DIR, filename)
+    except FileNotFoundError as e:
+        logger.warning(f"Static file '{filename}' not found: {e}. Returning 404.")
+        # If a specific static file is not found, return a 404
+        # This will prevent the SPA from loading if essential assets are missing
+        return "Not Found", 404
 
 @app.route('/api/health')
 def health_check():
@@ -1442,14 +1464,4 @@ def delete_duplicate_file(group_id, file_id):
         return jsonify({'message': 'Duplicate file deleted successfully'})
     except Exception as e:
         logger.error(f"Error deleting duplicate file: {e}")
-        return jsonify({'error': 'Failed to delete duplicate file'}), 500
-
-# Catch-all route for SPA routing
-@app.route('/<path:path>')
-def catch_all(path):
-    """Catch-all route for SPA routing"""
-    try:
-        return app.send_static_file('index.html')
-    except Exception as e:
-        # If static files are not available, redirect to root
-        return app.redirect('/') 
+        return jsonify({'error': 'Failed to delete duplicate file'}), 500 
