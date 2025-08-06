@@ -36,30 +36,17 @@ def cache_result(duration=CACHE_DURATION):
         return wrapper
     return decorator
 
-# Configure logging
-try:
-    # Try to create logs directory
-    os.makedirs('/app/logs', exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('/app/logs/app.log'),
-            logging.StreamHandler()
-        ]
-    )
-except Exception as e:
-    # Fallback to console-only logging if file logging fails
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
-    print(f"Warning: Could not set up file logging: {e}")
+# Configure logging - simplified for Docker
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 logger = logging.getLogger(__name__)
+logger.info("Starting application initialization...")
 
 # Initialize Flask app
 app = Flask(__name__) # Removed static_folder and static_url_path
@@ -213,50 +200,7 @@ def create_indexes():
     except Exception as e:
         logger.warning(f"Could not create indexes: {e}")
 
-# Call create_indexes after database creation
-if __name__ == '__main__':
-    # Create database tables
-    with app.app_context():
-        db.create_all()
-        logger.info("Database tables created")
-        
-        # Create indexes
-        try:
-            create_indexes()
-            logger.info("Database indexes created successfully")
-        except Exception as e:
-            logger.warning(f"Could not create indexes: {e}")
-        
-        # Initialize default settings if they don't exist
-        if not get_setting('scan_time'):
-            set_setting('scan_time', '01:00')
-        if not get_setting('max_scan_duration'):
-            set_setting('max_scan_duration', '6')
-        if not get_setting('theme'):
-            set_setting('theme', 'unraid')
-        if not get_setting('themes'):
-            set_setting('themes', 'unraid,plex,light,dark')
-        
-        logger.info("Default settings initialized")
-    
-    # Start the Flask application
-    logger.info("Starting Flask application...")
-    logger.info(f"FRONTEND_DIST_DIR: {FRONTEND_DIST_DIR}")
-    logger.info(f"app.root_path: {app.root_path}")
-    
-    # Check if static directory exists
-    import os
-    if os.path.exists(FRONTEND_DIST_DIR):
-        logger.info(f"Static directory exists: {FRONTEND_DIST_DIR}")
-        try:
-            files = os.listdir(FRONTEND_DIST_DIR)
-            logger.info(f"Static directory contents: {files}")
-        except Exception as e:
-            logger.error(f"Error listing static directory: {e}")
-    else:
-        logger.warning(f"Static directory does not exist: {FRONTEND_DIST_DIR}")
-    
-    app.run(host='0.0.0.0', port=8080, debug=False)
+
 
 # Utility functions
 def format_size(size_bytes):
@@ -1642,4 +1586,51 @@ def delete_duplicate_file(group_id, file_id):
         return jsonify({'message': 'Duplicate file deleted successfully'})
     except Exception as e:
         logger.error(f"Error deleting duplicate file: {e}")
-        return jsonify({'error': 'Failed to delete duplicate file'}), 500 
+        return jsonify({'error': 'Failed to delete duplicate file'}), 500
+
+# Application startup
+if __name__ == '__main__':
+    logger.info("Starting Flask application...")
+    
+    # Create database tables
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables created")
+            
+            # Create indexes
+            try:
+                create_indexes()
+                logger.info("Database indexes created successfully")
+            except Exception as e:
+                logger.warning(f"Could not create indexes: {e}")
+            
+            # Initialize default settings if they don't exist
+            if not get_setting('scan_time'):
+                set_setting('scan_time', '01:00')
+            if not get_setting('max_scan_duration'):
+                set_setting('max_scan_duration', '6')
+            if not get_setting('theme'):
+                set_setting('theme', 'unraid')
+            if not get_setting('themes'):
+                set_setting('themes', 'unraid,plex,light,dark')
+            
+            logger.info("Default settings initialized")
+            
+        except Exception as e:
+            logger.error(f"Error during startup: {e}")
+            raise
+    
+    # Check if static directory exists
+    if os.path.exists(FRONTEND_DIST_DIR):
+        logger.info(f"Static directory exists: {FRONTEND_DIST_DIR}")
+        try:
+            files = os.listdir(FRONTEND_DIST_DIR)
+            logger.info(f"Static directory contents: {files[:10]}...")  # Show first 10 files
+        except Exception as e:
+            logger.error(f"Error listing static directory: {e}")
+    else:
+        logger.warning(f"Static directory does not exist: {FRONTEND_DIST_DIR}")
+    
+    logger.info("Starting Flask server on 0.0.0.0:8080")
+    app.run(host='0.0.0.0', port=8080, debug=False) 
