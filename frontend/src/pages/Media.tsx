@@ -40,7 +40,7 @@ const Media: React.FC = () => {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         per_page: '50',
-        title: search,
+        search: search,
         type: mediaType,
         resolution,
       })
@@ -119,6 +119,7 @@ const Media: React.FC = () => {
               <option value="movie">Movies</option>
               <option value="tv_show">TV Shows</option>
               <option value="music">Music</option>
+              <option value="image">Images</option>
               <option value="other">Other</option>
             </select>
           </div>

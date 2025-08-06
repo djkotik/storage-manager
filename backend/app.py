@@ -214,6 +214,73 @@ def is_media_file(file_path, extension):
     path_lower = file_path.lower()
     return any(keyword in path_lower for keyword in media_keywords)
 
+def detect_duplicates(scan_id):
+    """Detect duplicate files based on size and name"""
+    try:
+        logger.info("Starting duplicate detection...")
+        
+        # Clear existing duplicate data for this scan
+        DuplicateFile.query.delete()
+        DuplicateGroup.query.delete()
+        
+        # Get all files from this scan, grouped by size
+        files_by_size = db.session.query(
+            FileRecord.size,
+            func.count(FileRecord.id).label('count')
+        ).filter(
+            FileRecord.scan_id == scan_id,
+            FileRecord.is_directory == False,
+            FileRecord.size > 0  # Only check files with size > 0
+        ).group_by(FileRecord.size).having(
+            func.count(FileRecord.id) > 1
+        ).all()
+        
+        duplicate_count = 0
+        for size, count in files_by_size:
+            # Get all files with this size
+            files = FileRecord.query.filter_by(
+                scan_id=scan_id,
+                size=size,
+                is_directory=False
+            ).all()
+            
+            # Group by name (exact match)
+            files_by_name = {}
+            for file in files:
+                if file.name not in files_by_name:
+                    files_by_name[file.name] = []
+                files_by_name[file.name].append(file)
+            
+            # Create duplicate groups for files with same name and size
+            for name, file_list in files_by_name.items():
+                if len(file_list) > 1:
+                    # Create duplicate group
+                    group = DuplicateGroup(
+                        hash_value=f"size_{size}_name_{name}",  # Simple hash based on size and name
+                        size=size
+                    )
+                    db.session.add(group)
+                    db.session.flush()  # Get the group ID
+                    
+                    # Add files to the group
+                    for i, file in enumerate(file_list):
+                        duplicate_file = DuplicateFile(
+                            file_id=file.id,
+                            group_id=group.id,
+                            hash_value=group.hash_value,
+                            is_primary=(i == 0)  # First file is primary
+                        )
+                        db.session.add(duplicate_file)
+                    
+                    duplicate_count += len(file_list)
+        
+        db.session.commit()
+        logger.info(f"Duplicate detection completed: {duplicate_count} duplicate files found")
+        
+    except Exception as e:
+        logger.error(f"Error detecting duplicates: {e}")
+        db.session.rollback()
+
 def scan_directory(data_path, scan_id):
     """Scan directory and populate database"""
     global scanner_state
@@ -344,6 +411,9 @@ def scan_directory(data_path, scan_id):
                 scan_record.status = 'completed'
                 db.session.commit()
             
+            # Detect duplicates
+            detect_duplicates(scan_id)
+            
             logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
             
         except Exception as e:
@@ -414,6 +484,66 @@ def health_check():
         'data_path': os.environ.get('DATA_PATH', '/data'),
         'scan_time': os.environ.get('SCAN_TIME', '01:00')
     })
+
+@app.route('/api/debug/directories')
+def debug_directories():
+    """Debug endpoint to check what directories exist"""
+    try:
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        
+        if not os.path.exists(data_path):
+            return jsonify({
+                'error': f'Data path {data_path} does not exist',
+                'data_path': data_path
+            })
+        
+        # Get top-level directories
+        top_level_dirs = []
+        try:
+            for item in os.listdir(data_path):
+                item_path = os.path.join(data_path, item)
+                if os.path.isdir(item_path):
+                    try:
+                        stat = os.stat(item_path)
+                        top_level_dirs.append({
+                            'name': item,
+                            'path': item_path,
+                            'size': stat.st_size,
+                            'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                        })
+                    except (OSError, PermissionError) as e:
+                        top_level_dirs.append({
+                            'name': item,
+                            'path': item_path,
+                            'error': str(e)
+                        })
+        except (OSError, PermissionError) as e:
+            return jsonify({
+                'error': f'Cannot access data path: {e}',
+                'data_path': data_path
+            })
+        
+        # Get database records
+        db_dirs = FileRecord.query.filter_by(
+            is_directory=True,
+            parent_path=data_path
+        ).all()
+        
+        return jsonify({
+            'data_path': data_path,
+            'filesystem_directories': top_level_dirs,
+            'database_directories': [{
+                'id': d.id,
+                'name': d.name,
+                'path': d.path,
+                'scan_id': d.scan_id
+            } for d in db_dirs],
+            'total_fs_dirs': len(top_level_dirs),
+            'total_db_dirs': len(db_dirs)
+        })
+    except Exception as e:
+        logger.error(f"Error in debug directories: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
@@ -845,9 +975,11 @@ def get_media_files():
                 'video_codec': media.video_codec,
                 'audio_codec': media.audio_codec,
                 'runtime': media.runtime,
-                'file_size': media.file_id and FileRecord.query.get(media.file_id).size or 0,
-                'file_size_formatted': media.file_id and format_size(FileRecord.query.get(media.file_id).size) or '0 B',
-                'path': media.file_id and FileRecord.query.get(media.file_id).path or ''
+                'file_format': media.file_format,
+                'size': media.file_id and FileRecord.query.get(media.file_id).size or 0,
+                'size_formatted': media.file_id and format_size(FileRecord.query.get(media.file_id).size) or '0 B',
+                'path': media.file_id and FileRecord.query.get(media.file_id).path or '',
+                'name': media.file_id and FileRecord.query.get(media.file_id).name or media.title
             } for media in media_files.items],
             'total': media_files.total,
             'pages': media_files.pages,
