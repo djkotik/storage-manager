@@ -4,11 +4,37 @@ import shutil
 import threading
 import time
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, desc
 from pathlib import Path
+from functools import wraps
+
+# Add simple caching
+cache = {}
+CACHE_DURATION = 300  # 5 minutes
+
+def cache_result(duration=CACHE_DURATION):
+    """Simple cache decorator"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            cache_key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
+            current_time = time.time()
+            
+            # Check if we have a cached result that's still valid
+            if cache_key in cache:
+                cached_time, cached_result = cache[cache_key]
+                if current_time - cached_time < duration:
+                    return cached_result
+            
+            # Get fresh result
+            result = func(*args, **kwargs)
+            cache[cache_key] = (current_time, result)
+            return result
+        return wrapper
+    return decorator
 
 # Configure logging
 logging.basicConfig(
@@ -152,6 +178,28 @@ class TrashBin(db.Model):
 with app.app_context():
     db.create_all()
     logger.info("Database tables created")
+
+# Add database indexes for better performance
+def create_indexes():
+    """Create database indexes for better query performance"""
+    try:
+        # Create indexes for commonly queried columns
+        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path)')
+        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_is_directory ON files(is_directory)')
+        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)')
+        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_scan_id ON files(scan_id)')
+        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status)')
+        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_scans_start_time ON scans(start_time)')
+        logger.info("Database indexes created successfully")
+    except Exception as e:
+        logger.warning(f"Could not create indexes: {e}")
+
+# Call create_indexes after database creation
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+        create_indexes()
+    app.run(host='0.0.0.0', port=8080, debug=False)
 
 # Utility functions
 def format_size(size_bytes):
@@ -736,6 +784,7 @@ def get_files():
         return jsonify({'error': 'Failed to get files'}), 500
 
 @app.route('/api/files/tree')
+@cache_result()
 def get_file_tree():
     """Get hierarchical file tree - top level shares"""
     try:
@@ -744,35 +793,27 @@ def get_file_tree():
         
         # Get top-level directories (shares) sorted by total size
         shares = db.session.query(
-            FileRecord,
-            func.count(FileRecord.id).label('file_count')
+            FileRecord
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.id,
-            FileRecord.path,
-            FileRecord.name,
-            FileRecord.size,
-            FileRecord.is_directory,
-            FileRecord.parent_path,
-            FileRecord.extension,
-            FileRecord.created_time,
-            FileRecord.modified_time,
-            FileRecord.accessed_time,
-            FileRecord.permissions,
-            FileRecord.scan_id
         ).all()
         
         logger.info(f"Found {len(shares)} top-level directories")
-        for share, file_count in shares:
+        for share in shares:
             logger.info(f"Directory: {share.name}, path: {share.path}, scan_id: {share.scan_id}")
         
         tree = []
-        for share, file_count in shares:
+        for share in shares:
             # Calculate total size of all files within this directory
             total_size = db.session.query(func.sum(FileRecord.size)).filter(
                 FileRecord.path.like(f"{share.path}/%")
+            ).scalar() or 0
+            
+            # Calculate actual file count within this directory (excluding directories)
+            file_count = db.session.query(func.count(FileRecord.id)).filter(
+                FileRecord.path.like(f"{share.path}/%"),
+                FileRecord.is_directory == False
             ).scalar() or 0
             
             tree.append({
@@ -803,31 +844,23 @@ def get_directory_children(directory_id):
         
         # Get direct children of this directory
         children = db.session.query(
-            FileRecord,
-            func.count(FileRecord.id).label('file_count')
+            FileRecord
         ).filter(
             FileRecord.parent_path == directory.path,
             FileRecord.is_directory == True
-        ).group_by(
-            FileRecord.id,
-            FileRecord.path,
-            FileRecord.name,
-            FileRecord.size,
-            FileRecord.is_directory,
-            FileRecord.parent_path,
-            FileRecord.extension,
-            FileRecord.created_time,
-            FileRecord.modified_time,
-            FileRecord.accessed_time,
-            FileRecord.permissions,
-            FileRecord.scan_id
         ).all()
         
         result = []
-        for child, file_count in children:
+        for child in children:
             # Calculate total size of all files within this subdirectory
             total_size = db.session.query(func.sum(FileRecord.size)).filter(
                 FileRecord.path.like(f"{child.path}/%")
+            ).scalar() or 0
+            
+            # Calculate actual file count within this subdirectory (excluding directories)
+            file_count = db.session.query(func.count(FileRecord.id)).filter(
+                FileRecord.path.like(f"{child.path}/%"),
+                FileRecord.is_directory == False
             ).scalar() or 0
             
             result.append({
@@ -850,6 +883,7 @@ def get_directory_children(directory_id):
         return jsonify({'error': 'Failed to get directory children'}), 500
 
 @app.route('/api/analytics/overview')
+@cache_result()
 def get_analytics_overview():
     """Get storage analytics overview"""
     try:
@@ -901,6 +935,7 @@ def get_analytics_overview():
         return jsonify({'error': 'Failed to get analytics overview'}), 500
 
 @app.route('/api/analytics/top-shares')
+@cache_result()
 def get_top_shares():
     """Get top folder shares by size"""
     try:
@@ -909,35 +944,27 @@ def get_top_shares():
         
         # Get top-level directories (shares)
         shares = db.session.query(
-            FileRecord,
-            func.count(FileRecord.id).label('file_count')
+            FileRecord
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.id,
-            FileRecord.path,
-            FileRecord.name,
-            FileRecord.size,
-            FileRecord.is_directory,
-            FileRecord.parent_path,
-            FileRecord.extension,
-            FileRecord.created_time,
-            FileRecord.modified_time,
-            FileRecord.accessed_time,
-            FileRecord.permissions,
-            FileRecord.scan_id
         ).all()
         
         logger.info(f"Found {len(shares)} top-level directories for top shares")
-        for share, file_count in shares:
+        for share in shares:
             logger.info(f"Top share: {share.name}, path: {share.path}, scan_id: {share.scan_id}")
         
         top_shares = []
-        for share, file_count in shares:
+        for share in shares:
             # Calculate total size of all files within this directory
             total_size = db.session.query(func.sum(FileRecord.size)).filter(
                 FileRecord.path.like(f"{share.path}/%")
+            ).scalar() or 0
+            
+            # Calculate actual file count within this directory (excluding directories)
+            file_count = db.session.query(func.count(FileRecord.id)).filter(
+                FileRecord.path.like(f"{share.path}/%"),
+                FileRecord.is_directory == False
             ).scalar() or 0
             
             top_shares.append({
@@ -959,6 +986,76 @@ def get_top_shares():
     except Exception as e:
         logger.error(f"Error getting top shares: {e}")
         return jsonify({'error': 'Failed to get top shares'}), 500
+
+@app.route('/api/analytics/stats')
+def get_analytics_stats():
+    """Get analytics statistics including scan count and growth metrics"""
+    try:
+        # Get total number of scans
+        total_scans = ScanRecord.query.count()
+        
+        # Get completed scans
+        completed_scans = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).limit(10).all()
+        
+        if len(completed_scans) < 2:
+            return jsonify({
+                'total_scans': total_scans,
+                'completed_scans': len(completed_scans),
+                'average_growth': {
+                    'files_per_week': 0,
+                    'size_per_week': 0,
+                    'files_formatted': '0',
+                    'size_formatted': '0 B'
+                },
+                'last_scan': None,
+                'first_scan': None
+            })
+        
+        # Calculate growth metrics
+        latest_scan = completed_scans[0]
+        oldest_scan = completed_scans[-1]
+        
+        # Calculate time difference in weeks
+        time_diff_weeks = (latest_scan.start_time - oldest_scan.start_time).days / 7
+        
+        if time_diff_weeks > 0:
+            # Calculate growth per week
+            file_growth = latest_scan.total_files - oldest_scan.total_files
+            size_growth = latest_scan.total_size - oldest_scan.total_size
+            
+            files_per_week = file_growth / time_diff_weeks
+            size_per_week = size_growth / time_diff_weeks
+        else:
+            files_per_week = 0
+            size_per_week = 0
+        
+        return jsonify({
+            'total_scans': total_scans,
+            'completed_scans': len(completed_scans),
+            'average_growth': {
+                'files_per_week': int(files_per_week),
+                'size_per_week': int(size_per_week),
+                'files_formatted': f"{int(files_per_week):,}",
+                'size_formatted': format_size(int(size_per_week))
+            },
+            'last_scan': {
+                'date': latest_scan.start_time.isoformat(),
+                'files': latest_scan.total_files,
+                'size': latest_scan.total_size,
+                'size_formatted': format_size(latest_scan.total_size)
+            },
+            'first_scan': {
+                'date': oldest_scan.start_time.isoformat(),
+                'files': oldest_scan.total_files,
+                'size': oldest_scan.total_size,
+                'size_formatted': format_size(oldest_scan.total_size)
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting analytics stats: {e}")
+        return jsonify({'error': 'Failed to get analytics stats'}), 500
 
 @app.route('/api/analytics/history')
 def get_storage_history():
@@ -1286,11 +1383,4 @@ def delete_duplicate_file(group_id, file_id):
         return jsonify({'message': 'Duplicate file deleted successfully'})
     except Exception as e:
         logger.error(f"Error deleting duplicate file: {e}")
-        return jsonify({'error': 'Failed to delete duplicate file'}), 500
-
-if __name__ == '__main__':
-    # Ensure data directory exists
-    Path('/app/data').mkdir(parents=True, exist_ok=True)
-    Path('/app/logs').mkdir(parents=True, exist_ok=True)
-    
-    app.run(host='0.0.0.0', port=8080, debug=os.environ.get('FLASK_ENV') == 'development') 
+        return jsonify({'error': 'Failed to delete duplicate file'}), 500 

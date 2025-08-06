@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { Database, TrendingUp, Calendar, Activity } from 'lucide-react'
 import axios from 'axios'
 
 interface StorageHistory {
@@ -14,24 +15,52 @@ interface AnalyticsData {
   history: StorageHistory[]
 }
 
+interface AnalyticsStats {
+  total_scans: number
+  completed_scans: number
+  average_growth: {
+    files_per_week: number
+    size_per_week: number
+    files_formatted: string
+    size_formatted: string
+  }
+  last_scan: {
+    date: string
+    files: number
+    size: number
+    size_formatted: string
+  } | null
+  first_scan: {
+    date: string
+    files: number
+    size: number
+    size_formatted: string
+  } | null
+}
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D']
 
 const Analytics: React.FC = () => {
   const [history, setHistory] = useState<StorageHistory[]>([])
+  const [stats, setStats] = useState<AnalyticsStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
 
   useEffect(() => {
-    fetchHistory()
+    fetchData()
   }, [days])
 
-  const fetchHistory = async () => {
+  const fetchData = async () => {
     setLoading(true)
     try {
-      const response = await axios.get(`/api/analytics/history?days=${days}`)
-      setHistory(response.data.history)
+      const [historyResponse, statsResponse] = await Promise.all([
+        axios.get(`/api/analytics/history?days=${days}`),
+        axios.get('/api/analytics/stats')
+      ])
+      setHistory(historyResponse.data.history)
+      setStats(statsResponse.data)
     } catch (error) {
-      console.error('Error fetching history:', error)
+      console.error('Error fetching analytics data:', error)
     } finally {
       setLoading(false)
     }
@@ -75,6 +104,67 @@ const Analytics: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {/* Analytics Stats */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="card p-6">
+            <div className="flex items-center">
+              <Database className="h-8 w-8 text-blue-600" />
+              <div className="ml-4">
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Total Scans
+                </h4>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {stats.total_scans}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="card p-6">
+            <div className="flex items-center">
+              <Activity className="h-8 w-8 text-green-600" />
+              <div className="ml-4">
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Completed Scans
+                </h4>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {stats.completed_scans}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="card p-6">
+            <div className="flex items-center">
+              <TrendingUp className="h-8 w-8 text-purple-600" />
+              <div className="ml-4">
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Files per Week
+                </h4>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {stats.average_growth.files_formatted}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="card p-6">
+            <div className="flex items-center">
+              <Calendar className="h-8 w-8 text-orange-600" />
+              <div className="ml-4">
+                <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Growth per Week
+                </h4>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {stats.average_growth.size_formatted}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Storage Usage Chart */}
       <div className="card p-6">
