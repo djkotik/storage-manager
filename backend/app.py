@@ -492,10 +492,34 @@ def scan_directory(data_path, scan_id):
 @app.route('/')
 def index():
     """Serve the main application"""
+    import os
+    
+    # Enhanced logging for debugging
+    logger.info(f"=== INDEX ROUTE DEBUG INFO ===")
+    logger.info(f"FRONTEND_DIST_DIR: {FRONTEND_DIST_DIR}")
+    logger.info(f"app.root_path: {app.root_path}")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"FRONTEND_DIST_DIR exists: {os.path.exists(FRONTEND_DIST_DIR)}")
+    
+    if os.path.exists(FRONTEND_DIST_DIR):
+        logger.info(f"FRONTEND_DIST_DIR is directory: {os.path.isdir(FRONTEND_DIST_DIR)}")
+        try:
+            dir_contents = os.listdir(FRONTEND_DIST_DIR)
+            logger.info(f"FRONTEND_DIST_DIR contents: {dir_contents}")
+        except Exception as e:
+            logger.error(f"Error listing FRONTEND_DIST_DIR contents: {e}")
+    
+    index_path = os.path.join(FRONTEND_DIST_DIR, 'index.html')
+    logger.info(f"Looking for index.html at: {index_path}")
+    logger.info(f"index.html exists: {os.path.exists(index_path)}")
+    
     try:
         logger.info(f"Attempting to serve index.html from: {FRONTEND_DIST_DIR}")
-        return send_from_directory(FRONTEND_DIST_DIR, 'index.html')
-    except FileNotFoundError:
+        response = send_from_directory(FRONTEND_DIST_DIR, 'index.html')
+        logger.info(f"Successfully served index.html, response type: {type(response)}")
+        return response
+    except FileNotFoundError as e:
+        logger.error(f"FileNotFoundError serving index.html: {e}")
         # If static files are not available, return a simple HTML page
         logger.warning(f"Static files not found in {FRONTEND_DIST_DIR}")
         html_content = """
@@ -551,6 +575,9 @@ def index():
 </html>
         """
         return html_content, 200, {'Content-Type': 'text/html'}
+    except Exception as e:
+        logger.error(f"Unexpected error serving index.html: {e}")
+        return f"Internal Server Error: {str(e)}", 500
 
 @app.route('/debug/static')
 def debug_static():
@@ -558,58 +585,157 @@ def debug_static():
     import os
     static_dir = FRONTEND_DIST_DIR
     files = []
-    if os.path.exists(static_dir):
-        for root, dirs, filenames in os.walk(static_dir):
-            for filename in filenames:
-                rel_path = os.path.relpath(os.path.join(root, filename), static_dir)
-                files.append(rel_path)
-    return jsonify({
+    
+    debug_info = {
         'static_folder': static_dir,
-        'files': files,
-        'index_exists': os.path.exists(os.path.join(static_dir, 'index.html')) if static_dir else False
-    })
+        'static_folder_exists': os.path.exists(static_dir),
+        'static_folder_is_dir': os.path.isdir(static_dir) if os.path.exists(static_dir) else False,
+        'app_root_path': app.root_path,
+        'current_working_dir': os.getcwd(),
+        'files': [],
+        'index_exists': False,
+        'index_path': os.path.join(static_dir, 'index.html') if static_dir else None
+    }
+    
+    if os.path.exists(static_dir):
+        try:
+            for root, dirs, filenames in os.walk(static_dir):
+                for filename in filenames:
+                    rel_path = os.path.relpath(os.path.join(root, filename), static_dir)
+                    files.append(rel_path)
+            debug_info['files'] = sorted(files)
+        except Exception as e:
+            debug_info['error'] = str(e)
+    
+    debug_info['index_exists'] = os.path.exists(os.path.join(static_dir, 'index.html')) if static_dir else False
+    
+    return jsonify(debug_info)
 
 @app.route('/debug/index')
 def debug_index():
     """Debug route to check index.html content"""
+    import os
     try:
-        with open(os.path.join(FRONTEND_DIST_DIR, 'index.html'), 'r') as f:
+        index_path = os.path.join(FRONTEND_DIST_DIR, 'index.html')
+        with open(index_path, 'r') as f:
             content = f.read()
         return jsonify({
             'exists': True,
             'length': len(content),
-            'preview': content[:500] + '...' if len(content) > 500 else content
+            'preview': content[:500] + '...' if len(content) > 500 else content,
+            'path': index_path
         })
     except FileNotFoundError:
         return jsonify({
             'exists': False,
-            'error': 'index.html not found in static folder'
+            'error': 'index.html not found in static folder',
+            'path': os.path.join(FRONTEND_DIST_DIR, 'index.html') if FRONTEND_DIST_DIR else None
         })
     except Exception as e:
         return jsonify({
             'exists': False,
-            'error': str(e)
+            'error': str(e),
+            'path': os.path.join(FRONTEND_DIST_DIR, 'index.html') if FRONTEND_DIST_DIR else None
         })
+
+@app.route('/debug/filesystem')
+def debug_filesystem():
+    """Debug route to check filesystem structure"""
+    import os
+    
+    def scan_directory(path, max_depth=3, current_depth=0):
+        if current_depth > max_depth:
+            return {'name': os.path.basename(path), 'type': 'directory', 'truncated': True}
+        
+        try:
+            if os.path.isdir(path):
+                items = []
+                for item in os.listdir(path):
+                    item_path = os.path.join(path, item)
+                    if os.path.isdir(item_path):
+                        items.append(scan_directory(item_path, max_depth, current_depth + 1))
+                    else:
+                        items.append({
+                            'name': item,
+                            'type': 'file',
+                            'size': os.path.getsize(item_path) if os.path.exists(item_path) else 0
+                        })
+                return {
+                    'name': os.path.basename(path),
+                    'type': 'directory',
+                    'items': items[:10]  # Limit to first 10 items
+                }
+            else:
+                return {
+                    'name': os.path.basename(path),
+                    'type': 'file',
+                    'size': os.path.getsize(path) if os.path.exists(path) else 0
+                }
+        except Exception as e:
+            return {
+                'name': os.path.basename(path),
+                'type': 'error',
+                'error': str(e)
+            }
+    
+    debug_info = {
+        'current_working_dir': os.getcwd(),
+        'app_root_path': app.root_path,
+        'frontend_dist_dir': FRONTEND_DIST_DIR,
+        'frontend_dist_exists': os.path.exists(FRONTEND_DIST_DIR),
+        'filesystem': {}
+    }
+    
+    # Scan important directories
+    important_paths = ['/app', '/app/static', app.root_path, FRONTEND_DIST_DIR]
+    for path in important_paths:
+        if os.path.exists(path):
+            debug_info['filesystem'][path] = scan_directory(path)
+    
+    return jsonify(debug_info)
 
 # Route for serving static assets (JS, CSS, images, etc.)
 @app.route('/<path:filename>')
 def serve_static(filename):
     """Serve static files from the built frontend."""
-    logger.info(f"Attempting to serve static file: {filename} from {FRONTEND_DIST_DIR}")
+    import os
+    
+    logger.info(f"=== STATIC FILE REQUEST DEBUG ===")
+    logger.info(f"Requested filename: {filename}")
+    logger.info(f"FRONTEND_DIST_DIR: {FRONTEND_DIST_DIR}")
+    logger.info(f"FRONTEND_DIST_DIR exists: {os.path.exists(FRONTEND_DIST_DIR)}")
+    
+    full_path = os.path.join(FRONTEND_DIST_DIR, filename)
+    logger.info(f"Full path to serve: {full_path}")
+    logger.info(f"File exists: {os.path.exists(full_path)}")
+    
     try:
-        return send_from_directory(FRONTEND_DIST_DIR, filename)
+        logger.info(f"Attempting to serve static file: {filename} from {FRONTEND_DIST_DIR}")
+        response = send_from_directory(FRONTEND_DIST_DIR, filename)
+        logger.info(f"Successfully served {filename}, response type: {type(response)}")
+        return response
     except FileNotFoundError as e:
+        logger.error(f"FileNotFoundError serving '{filename}': {e}")
         logger.warning(f"Static file '{filename}' not found: {e}. Returning 404.")
         # If a specific static file is not found, return a 404
         # This will prevent the SPA from loading if essential assets are missing
         return "Not Found", 404
+    except Exception as e:
+        logger.error(f"Unexpected error serving '{filename}': {e}")
+        return f"Internal Server Error: {str(e)}", 500
 
 @app.route('/api/health')
 def health_check():
     """Health check endpoint"""
+    import os
     return jsonify({
         'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': datetime.utcnow().isoformat(),
+        'app_root_path': app.root_path,
+        'frontend_dist_dir': FRONTEND_DIST_DIR,
+        'frontend_dist_exists': os.path.exists(FRONTEND_DIST_DIR),
+        'index_html_exists': os.path.exists(os.path.join(FRONTEND_DIST_DIR, 'index.html')) if FRONTEND_DIST_DIR else False,
+        'current_working_dir': os.getcwd(),
         'data_path': os.environ.get('DATA_PATH', '/data'),
         'scan_time': os.environ.get('SCAN_TIME', '01:00')
     })
