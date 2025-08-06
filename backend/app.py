@@ -184,12 +184,14 @@ def create_indexes():
     """Create database indexes for better query performance"""
     try:
         # Create indexes for commonly queried columns
-        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path)')
-        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_is_directory ON files(is_directory)')
-        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)')
-        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_files_scan_id ON files(scan_id)')
-        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status)')
-        db.engine.execute('CREATE INDEX IF NOT EXISTS idx_scans_start_time ON scans(start_time)')
+        with db.engine.connect() as conn:
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_is_directory ON files(is_directory)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_scan_id ON files(scan_id)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_scans_start_time ON scans(start_time)'))
+            conn.commit()
         logger.info("Database indexes created successfully")
     except Exception as e:
         logger.warning(f"Could not create indexes: {e}")
@@ -487,7 +489,64 @@ def scan_directory(data_path, scan_id):
 @app.route('/')
 def index():
     """Serve the main application"""
-    return app.send_static_file('index.html')
+    try:
+        return app.send_static_file('index.html')
+    except Exception as e:
+        # If static files are not available, return a simple HTML page
+        logger.warning(f"Static files not found: {e}")
+        html_content = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>unRAID Storage Analyzer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .error { color: #d32f2f; background: #ffebee; padding: 15px; border-radius: 4px; margin: 20px 0; }
+        .info { color: #1976d2; background: #e3f2fd; padding: 15px; border-radius: 4px; margin: 20px 0; }
+        .endpoint { background: #f5f5f5; padding: 10px; margin: 5px 0; border-radius: 4px; font-family: monospace; }
+        h1 { color: #333; }
+        h2 { color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>unRAID Storage Analyzer</h1>
+        <div class="error">
+            <h2>⚠️ Frontend Not Built</h2>
+            <p>The frontend application has not been built successfully. This usually means the Docker build process failed during the frontend build step.</p>
+        </div>
+        
+        <div class="info">
+            <h2>🔧 Troubleshooting</h2>
+            <p>To fix this issue:</p>
+            <ol>
+                <li>Check the Docker build logs for frontend build errors</li>
+                <li>Ensure Node.js dependencies are available during build</li>
+                <li>Rebuild the Docker image: <code>docker build -t unraid-storage-analyzer:latest .</code></li>
+            </ol>
+        </div>
+        
+        <h2>📡 Available API Endpoints</h2>
+        <p>The backend API is running and these endpoints are available:</p>
+        <div class="endpoint">GET /api/health</div>
+        <div class="endpoint">GET /api/scan/status</div>
+        <div class="endpoint">GET /api/analytics/overview</div>
+        <div class="endpoint">GET /api/settings</div>
+        <div class="endpoint">POST /api/scan/start</div>
+        
+        <h2>🔍 Debug Information</h2>
+        <p>You can check the following debug endpoints:</p>
+        <div class="endpoint">GET /debug/static</div>
+        <div class="endpoint">GET /debug/index</div>
+        <div class="endpoint">GET /api/debug/directories</div>
+    </div>
+</body>
+</html>
+        """
+        return html_content, 200, {'Content-Type': 'text/html'}
 
 @app.route('/debug/static')
 def debug_static():
@@ -1383,4 +1442,14 @@ def delete_duplicate_file(group_id, file_id):
         return jsonify({'message': 'Duplicate file deleted successfully'})
     except Exception as e:
         logger.error(f"Error deleting duplicate file: {e}")
-        return jsonify({'error': 'Failed to delete duplicate file'}), 500 
+        return jsonify({'error': 'Failed to delete duplicate file'}), 500
+
+# Catch-all route for SPA routing
+@app.route('/<path:path>')
+def catch_all(path):
+    """Catch-all route for SPA routing"""
+    try:
+        return app.send_static_file('index.html')
+    except Exception as e:
+        # If static files are not available, redirect to root
+        return app.redirect('/') 

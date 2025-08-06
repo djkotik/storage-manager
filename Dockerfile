@@ -8,6 +8,10 @@ RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
+# Verify the build output
+RUN ls -la dist/ || echo "Build failed - no dist directory"
+RUN test -f dist/index.html || echo "Build failed - no index.html"
+
 FROM python:3.11-alpine AS backend-builder
 
 WORKDIR /app
