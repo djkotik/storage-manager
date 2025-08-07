@@ -1083,15 +1083,66 @@ def update_settings():
 def reset_database():
     """Reset the database - use with caution!"""
     try:
+        logger.info("=== DATABASE RESET REQUESTED ===")
+        
+        # Stop any running scan
+        if scanner_state['scanning']:
+            scanner_state['scanning'] = False
+            logger.info("Stopped running scan before database reset")
+        
         # Drop all tables
+        logger.info("Dropping all database tables...")
         db.drop_all()
+        
         # Recreate tables
+        logger.info("Recreating database tables...")
         db.create_all()
-        logger.info("Database reset successfully")
+        
+        # Create indexes
+        logger.info("Creating database indexes...")
+        try:
+            create_indexes()
+            logger.info("Database indexes created successfully")
+        except Exception as e:
+            logger.warning(f"Could not create indexes: {e}")
+        
+        # Initialize default settings
+        logger.info("Initializing default settings...")
+        if not get_setting('scan_time'):
+            set_setting('scan_time', '01:00')
+        if not get_setting('max_scan_duration'):
+            set_setting('max_scan_duration', '6')
+        if not get_setting('theme'):
+            set_setting('theme', 'unraid')
+        if not get_setting('themes'):
+            set_setting('themes', 'unraid,plex,light,dark')
+        if not get_setting('max_items_per_folder'):
+            set_setting('max_items_per_folder', '100')
+        
+        # Clear cache
+        global cache
+        cache.clear()
+        logger.info("Cache cleared")
+        
+        # Reset scanner state
+        scanner_state.update({
+            'scanning': False,
+            'current_scan_id': None,
+            'start_time': None,
+            'total_files': 0,
+            'total_directories': 0,
+            'total_size': 0,
+            'current_path': '',
+            'error': None
+        })
+        
+        logger.info("=== DATABASE RESET COMPLETED SUCCESSFULLY ===")
         return jsonify({'message': 'Database reset successfully'})
     except Exception as e:
+        logger.error(f"=== DATABASE RESET ERROR ===")
         logger.error(f"Error resetting database: {e}")
-        return jsonify({'error': 'Failed to reset database'}), 500
+        logger.error(f"Error type: {type(e).__name__}")
+        return jsonify({'error': f'Failed to reset database: {str(e)}'}), 500
 
 @app.route('/api/scan/start', methods=['POST'])
 def start_scan():
@@ -1716,23 +1767,24 @@ def get_analytics_stats():
                 'first_scan': None
             })
         
-        # Calculate growth metrics
+        # Calculate growth metrics based on the last 2 scans
         latest_scan = completed_scans[0]
-        oldest_scan = completed_scans[-1]
+        previous_scan = completed_scans[1] if len(completed_scans) > 1 else None
         
-        # Calculate time difference in weeks
-        time_diff_weeks = (latest_scan.start_time - oldest_scan.start_time).days / 7
+        files_per_week = 0
+        size_per_week = 0
         
-        if time_diff_weeks > 0:
+        if previous_scan:
+            # Calculate time difference in weeks
+            time_diff_days = (latest_scan.start_time - previous_scan.start_time).days
+            time_diff_weeks = max(time_diff_days / 7, 0.1)  # Minimum 0.1 weeks to avoid division by zero
+            
             # Calculate growth per week
-            file_growth = latest_scan.total_files - oldest_scan.total_files
-            size_growth = latest_scan.total_size - oldest_scan.total_size
+            file_growth = latest_scan.total_files - previous_scan.total_files
+            size_growth = latest_scan.total_size - previous_scan.total_size
             
             files_per_week = file_growth / time_diff_weeks
             size_per_week = size_growth / time_diff_weeks
-        else:
-            files_per_week = 0
-            size_per_week = 0
         
         return jsonify({
             'total_scans': total_scans,
@@ -1750,10 +1802,10 @@ def get_analytics_stats():
                 'size_formatted': format_size(latest_scan.total_size)
             },
             'first_scan': {
-                'date': oldest_scan.start_time.isoformat(),
-                'files': oldest_scan.total_files,
-                'size': oldest_scan.total_size,
-                'size_formatted': format_size(oldest_scan.total_size)
+                'date': completed_scans[-1].start_time.isoformat(),
+                'files': completed_scans[-1].total_files,
+                'size': completed_scans[-1].total_size,
+                'size_formatted': format_size(completed_scans[-1].total_size)
             }
         })
     except Exception as e:
@@ -1762,25 +1814,55 @@ def get_analytics_stats():
 
 @app.route('/api/analytics/history')
 def get_storage_history():
-    """Get storage usage history"""
+    """Get storage usage history from all completed scans"""
     try:
         days = request.args.get('days', 30, type=int)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
         
-        history = StorageHistory.query.filter(
+        # Get data from StorageHistory table (if any)
+        storage_history = StorageHistory.query.filter(
             StorageHistory.date >= start_date,
             StorageHistory.date <= end_date
         ).order_by(StorageHistory.date).all()
         
-        return jsonify({
-            'history': [{
+        # Get data from completed scans
+        completed_scans = ScanRecord.query.filter(
+            ScanRecord.status == 'completed',
+            ScanRecord.start_time >= start_date,
+            ScanRecord.start_time <= end_date
+        ).order_by(ScanRecord.start_time).all()
+        
+        # Combine both sources, prioritizing StorageHistory if available
+        history_data = {}
+        
+        # Add StorageHistory data
+        for record in storage_history:
+            history_data[record.date.date()] = {
                 'date': record.date.isoformat(),
                 'total_size': record.total_size,
                 'total_size_formatted': format_size(record.total_size),
                 'file_count': record.file_count,
                 'directory_count': record.directory_count
-            } for record in history]
+            }
+        
+        # Add ScanRecord data for dates not already covered
+        for scan in completed_scans:
+            scan_date = scan.start_time.date()
+            if scan_date not in history_data:
+                history_data[scan_date] = {
+                    'date': scan.start_time.isoformat(),
+                    'total_size': scan.total_size,
+                    'total_size_formatted': format_size(scan.total_size),
+                    'file_count': scan.total_files,
+                    'directory_count': scan.total_directories
+                }
+        
+        # Convert to sorted list
+        history = sorted(history_data.values(), key=lambda x: x['date'])
+        
+        return jsonify({
+            'history': history
         })
     except Exception as e:
         logger.error(f"Error getting storage history: {e}")

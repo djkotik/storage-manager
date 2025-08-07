@@ -152,7 +152,7 @@ const Settings: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Max Items per Folder
+              Max Largest Items per Folder
             </label>
             <input
               type="number"
@@ -163,7 +163,7 @@ const Settings: React.FC = () => {
               className="input"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Maximum number of items to scan per folder
+              Maximum number of largest items to show within a folder in Usage Explorer
             </p>
           </div>
 
