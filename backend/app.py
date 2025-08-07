@@ -1145,26 +1145,25 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Get top-level directories (shares)
-        shares = db.session.query(
-            FileRecord
+        # Use a single optimized query with aggregation
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('file_count')
         ).filter(
             FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
+        ).group_by(
+            FileRecord.name,
+            FileRecord.path
         ).all()
         
-        logger.info(f"Found {len(shares)} top-level directories for top shares")
-        for share in shares:
-            logger.info(f"Top share: {share.name}, path: {share.path}, scan_id: {share.scan_id}")
+        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
         
         top_shares = []
-        for share in shares:
-            # Calculate total size of all files within this directory
-            total_size = db.session.query(func.sum(FileRecord.size)).filter(
-                FileRecord.path.like(f"{share.path}/%")
-            ).scalar() or 0
-            
-            # Calculate actual file count within this directory (excluding directories)
+        for share in shares_data:
+            # Get file count (excluding directories) for this share
             file_count = db.session.query(func.count(FileRecord.id)).filter(
                 FileRecord.path.like(f"{share.path}/%"),
                 FileRecord.is_directory == False
@@ -1173,8 +1172,8 @@ def get_top_shares():
             top_shares.append({
                 'name': share.name,
                 'path': share.path,
-                'size': total_size,
-                'size_formatted': format_size(total_size),
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
                 'file_count': file_count
             })
         
@@ -1414,45 +1413,14 @@ def get_logs():
     try:
         lines = request.args.get('lines', 50, type=int)
         
-        # Read the log file
-        log_file = '/app/logs/app.log'
-        logs = []
-        
-        if os.path.exists(log_file):
-            with open(log_file, 'r') as f:
-                # Get the last N lines
-                lines_list = f.readlines()
-                recent_lines = lines_list[-lines:] if len(lines_list) > lines else lines_list
-                
-                for line in recent_lines:
-                    # Parse log line to extract timestamp and message
-                    if ' - ' in line:
-                        parts = line.split(' - ', 2)
-                        if len(parts) >= 3:
-                            timestamp = parts[0]
-                            level = parts[1]
-                            message = parts[2].strip()
-                            
-                            logs.append({
-                                'timestamp': timestamp,
-                                'level': level,
-                                'message': message,
-                                'raw': line.strip()
-                            })
-                        else:
-                            logs.append({
-                                'timestamp': '',
-                                'level': 'INFO',
-                                'message': line.strip(),
-                                'raw': line.strip()
-                            })
-                    else:
-                        logs.append({
-                            'timestamp': '',
-                            'level': 'INFO',
-                            'message': line.strip(),
-                            'raw': line.strip()
-                        })
+        # Since we're using StreamHandler only, we can't read logs from a file
+        # Instead, return a message indicating logs are available via docker logs
+        logs = [{
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'level': 'INFO',
+            'message': f'Application logs are available via "docker logs <container_name>". Requested {lines} lines.',
+            'raw': f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} - INFO - Application logs are available via "docker logs <container_name>". Requested {lines} lines.'
+        }]
         
         return jsonify({
             'logs': logs,

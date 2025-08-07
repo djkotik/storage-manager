@@ -56,29 +56,46 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 2000) // Poll every 2 seconds
+    const interval = setInterval(fetchData, 10000) // Poll every 10 seconds instead of 2
     return () => clearInterval(interval)
   }, [])
 
   const fetchData = async () => {
     try {
-      const [statusRes, analyticsRes, topSharesRes, logsRes] = await Promise.all([
-        axios.get('/api/scan/status'),
-        axios.get('/api/analytics/overview').catch(() => null),
-        axios.get('/api/analytics/top-shares').catch(() => null),
-        axios.get('/api/logs?lines=20').catch(() => null)
+      // Only fetch essential data on every poll
+      const [statusRes] = await Promise.all([
+        axios.get('/api/scan/status', { timeout: 5000 })
       ])
       
       setScanStatus(statusRes.data)
-      if (analyticsRes) {
-        setAnalytics(analyticsRes.data)
+      
+      // Fetch other data less frequently or only when needed
+      if (!analytics) {
+        try {
+          const analyticsRes = await axios.get('/api/analytics/overview', { timeout: 10000 })
+          setAnalytics(analyticsRes.data)
+        } catch (error) {
+          console.error('Error fetching analytics:', error)
+        }
       }
-      if (topSharesRes) {
-        setTopShares(topSharesRes.data.top_shares)
+      
+      if (topShares.length === 0) {
+        try {
+          const topSharesRes = await axios.get('/api/analytics/top-shares', { timeout: 15000 })
+          setTopShares(topSharesRes.data.top_shares)
+        } catch (error) {
+          console.error('Error fetching top shares:', error)
+        }
       }
-      if (logsRes) {
+      
+      // Fetch logs less frequently
+      try {
+        const logsRes = await axios.get('/api/logs?lines=20', { timeout: 5000 })
         setLogs(logsRes.data.logs)
+      } catch (error) {
+        console.error('Error fetching logs:', error)
       }
+      
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
