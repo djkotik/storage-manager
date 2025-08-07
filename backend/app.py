@@ -407,6 +407,23 @@ def is_media_file(file_path, extension):
     path_lower = file_path.lower()
     return any(keyword in path_lower for keyword in media_keywords)
 
+# Add database indexes for better performance
+def create_indexes():
+    """Create database indexes for better query performance"""
+    try:
+        # Create indexes for commonly queried columns
+        with db.engine.connect() as conn:
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_is_directory ON files(is_directory)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_scan_id ON files(scan_id)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status)'))
+            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_scans_start_time ON scans(start_time)'))
+            conn.commit()
+        logger.info("Database indexes created successfully")
+    except Exception as e:
+        logger.warning(f"Could not create indexes: {e}")
+
 # Create database tables
 with app.app_context():
     db.create_all()
@@ -435,27 +452,6 @@ with app.app_context():
     for key, value in default_settings.items():
         if not get_setting(key):
             set_setting(key, value)
-
-# Add database indexes for better performance
-def create_indexes():
-    """Create database indexes for better query performance"""
-    try:
-        # Create indexes for commonly queried columns
-        with db.engine.connect() as conn:
-            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path)'))
-            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_is_directory ON files(is_directory)'))
-            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)'))
-            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_files_scan_id ON files(scan_id)'))
-            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status)'))
-            conn.execute(db.text('CREATE INDEX IF NOT EXISTS idx_scans_start_time ON scans(start_time)'))
-            conn.commit()
-        logger.info("Database indexes created successfully")
-    except Exception as e:
-        logger.warning(f"Could not create indexes: {e}")
-
-
-
-
 
 def detect_duplicates(scan_id):
     """Detect duplicate files based on size and content hash"""
@@ -2745,6 +2741,8 @@ if __name__ == '__main__':
                 set_setting('themes', 'unraid,plex,light,dark')
             if not get_setting('max_items_per_folder'):
                 set_setting('max_items_per_folder', '100')
+            if not get_setting('max_shares_to_scan'):
+                set_setting('max_shares_to_scan', '0')
             
             logger.info("Default settings initialized")
             
