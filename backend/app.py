@@ -1196,30 +1196,39 @@ def get_top_shares():
             # Fallback to old approach if no pre-calculated data
             logger.info("No pre-calculated totals found, using fallback approach")
             
-            shares_data = db.session.query(
-                FileRecord.name,
-                FileRecord.path,
-                FileRecord.id,
-                func.sum(FileRecord.size).label('total_size'),
-                func.count(FileRecord.id).label('total_count'),
-                func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
-            ).filter(
-                FileRecord.parent_path == data_path
-            ).group_by(
-                FileRecord.name,
-                FileRecord.path,
-                FileRecord.id
-            ).all()
+            # Get the latest completed scan
+            latest_scan = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'completed'
+            ).order_by(ScanRecord.start_time.desc()).first()
             
-            top_shares = []
-            for share in shares_data:
-                top_shares.append({
-                    'name': share.name,
-                    'path': share.path,
-                    'size': share.total_size or 0,
-                    'size_formatted': format_size(share.total_size or 0),
-                    'file_count': share.file_count or 0
-                })
+            if latest_scan:
+                # Get distinct top-level directories from latest scan
+                shares_data = db.session.query(
+                    FileRecord.name,
+                    FileRecord.path,
+                    func.sum(FileRecord.size).label('total_size'),
+                    func.count(FileRecord.id).label('total_count'),
+                    func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+                ).filter(
+                    FileRecord.parent_path == data_path,
+                    FileRecord.is_directory == True,  # Only directories
+                    FileRecord.scan_id == latest_scan.id
+                ).group_by(
+                    FileRecord.name,
+                    FileRecord.path
+                ).all()
+                
+                top_shares = []
+                for share in shares_data:
+                    top_shares.append({
+                        'name': share.name,
+                        'path': share.path,
+                        'size': share.total_size or 0,
+                        'size_formatted': format_size(share.total_size or 0),
+                        'file_count': share.file_count or 0
+                    })
+            else:
+                top_shares = []
         
         # Sort by total size and take top 10
         top_shares.sort(key=lambda x: x['size'], reverse=True)
@@ -1275,33 +1284,44 @@ def get_file_tree():
             # Fallback to old approach if no pre-calculated data
             logger.info("No pre-calculated totals found, using fallback approach")
             
-            shares_data = db.session.query(
-                FileRecord.name,
-                FileRecord.path,
-                FileRecord.id,
-                func.sum(FileRecord.size).label('total_size'),
-                func.count(FileRecord.id).label('total_count'),
-                func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
-            ).filter(
-                FileRecord.parent_path == data_path
-            ).group_by(
-                FileRecord.name,
-                FileRecord.path,
-                FileRecord.id
-            ).all()
+            # Get the latest completed scan
+            latest_scan = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'completed'
+            ).order_by(ScanRecord.start_time.desc()).first()
             
-            tree = []
-            for share in shares_data:
-                tree.append({
-                    'id': share.id,
-                    'name': share.name,
-                    'path': share.path,
-                    'size': share.total_size or 0,
-                    'size_formatted': format_size(share.total_size or 0),
-                    'file_count': share.file_count or 0,
-                    'is_directory': True,
-                    'children': []  # Will be populated when expanded
-                })
+            if latest_scan:
+                # Get distinct top-level directories from latest scan
+                shares_data = db.session.query(
+                    FileRecord.name,
+                    FileRecord.path,
+                    FileRecord.id,
+                    func.sum(FileRecord.size).label('total_size'),
+                    func.count(FileRecord.id).label('total_count'),
+                    func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+                ).filter(
+                    FileRecord.parent_path == data_path,
+                    FileRecord.is_directory == True,  # Only directories
+                    FileRecord.scan_id == latest_scan.id
+                ).group_by(
+                    FileRecord.name,
+                    FileRecord.path,
+                    FileRecord.id
+                ).all()
+                
+                tree = []
+                for share in shares_data:
+                    tree.append({
+                        'id': share.id,
+                        'name': share.name,
+                        'path': share.path,
+                        'size': share.total_size or 0,
+                        'size_formatted': format_size(share.total_size or 0),
+                        'file_count': share.file_count or 0,
+                        'is_directory': True,
+                        'children': []  # Will be populated when expanded
+                    })
+            else:
+                tree = []
         
         # Sort by total size
         tree.sort(key=lambda x: x['size'], reverse=True)
