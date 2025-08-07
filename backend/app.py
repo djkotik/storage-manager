@@ -667,6 +667,10 @@ def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
     try:
         logger.info(f"Calculating directory totals for scan {scan_id}, max depth {max_depth}")
         
+        # Clear existing totals for this scan
+        DirectoryTotal.query.filter_by(scan_id=scan_id).delete()
+        db.session.commit()
+        
         # Get all directories from this scan
         directories = db.session.query(
             FileRecord.path,
@@ -676,13 +680,18 @@ def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
             FileRecord.is_directory == True
         ).all()
         
+        logger.info(f"Found {len(directories)} directories to process")
+        
         # Calculate depth for each directory
         for directory in directories:
-            path_parts = directory.path.replace(data_path, '').strip('/').split('/')
-            depth = len(path_parts)
+            # Calculate depth relative to data_path
+            relative_path = directory.path.replace(data_path, '').strip('/')
+            depth = len(relative_path.split('/')) if relative_path else 0
+            
+            logger.info(f"Processing directory: {directory.path}, depth: {depth}")
             
             if depth <= max_depth:
-                # Calculate totals for this directory
+                # Calculate totals for this directory (including the directory itself)
                 totals = db.session.query(
                     func.sum(FileRecord.size).label('total_size'),
                     func.count(FileRecord.id).label('file_count'),
@@ -692,26 +701,29 @@ def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
                     FileRecord.scan_id == scan_id
                 ).first()
                 
-                # Store or update the totals
-                existing = DirectoryTotal.query.filter_by(path=directory.path).first()
-                if existing:
-                    existing.total_size = totals.total_size or 0
-                    existing.file_count = totals.file_count or 0
-                    existing.directory_count = totals.directory_count or 0
-                    existing.depth = depth
-                    existing.scan_id = scan_id
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    new_total = DirectoryTotal(
-                        path=directory.path,
-                        name=directory.name,
-                        total_size=totals.total_size or 0,
-                        file_count=totals.file_count or 0,
-                        directory_count=totals.directory_count or 0,
-                        depth=depth,
-                        scan_id=scan_id
-                    )
-                    db.session.add(new_total)
+                # Also get the directory's own size (should be 0 for directories)
+                dir_size = db.session.query(FileRecord.size).filter(
+                    FileRecord.path == directory.path,
+                    FileRecord.scan_id == scan_id
+                ).scalar() or 0
+                
+                total_size = (totals.total_size or 0) + dir_size
+                file_count = totals.file_count or 0
+                directory_count = totals.directory_count or 0
+                
+                logger.info(f"Directory {directory.name}: total_size={total_size}, file_count={file_count}, directory_count={directory_count}")
+                
+                # Store the totals
+                new_total = DirectoryTotal(
+                    path=directory.path,
+                    name=directory.name,
+                    total_size=total_size,
+                    file_count=file_count,
+                    directory_count=directory_count,
+                    depth=depth,
+                    scan_id=scan_id
+                )
+                db.session.add(new_total)
         
         db.session.commit()
         logger.info(f"Directory totals calculated and stored for scan {scan_id}")
@@ -1607,6 +1619,20 @@ def get_directory_children(directory_id):
                 # Check if we have pre-calculated totals for this directory
                 totals = get_directory_total(child.path)
                 
+                # If no pre-calculated totals, calculate on-the-fly
+                if totals['total_size'] == 0:
+                    # Calculate totals for this directory
+                    dir_totals = db.session.query(
+                        func.sum(FileRecord.size).label('total_size'),
+                        func.count(FileRecord.id).label('file_count')
+                    ).filter(
+                        FileRecord.path.like(f"{child.path}/%"),
+                        FileRecord.scan_id == directory.scan_id
+                    ).first()
+                    
+                    totals['total_size'] = dir_totals.total_size or 0
+                    totals['file_count'] = dir_totals.file_count or 0
+                
                 result.append({
                     'id': child.id,
                     'name': child.name,
@@ -2205,6 +2231,79 @@ def delete_duplicate_file(group_id, file_id):
     except Exception as e:
         logger.error(f"Error deleting duplicate file: {e}")
         return jsonify({'error': 'Failed to delete duplicate file'}), 500
+
+# Add debug endpoint to check DirectoryTotal table
+@app.route('/api/debug/directory-totals')
+def debug_directory_totals():
+    """Debug endpoint to check DirectoryTotal table contents"""
+    try:
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        
+        # Get all directory totals
+        totals = DirectoryTotal.query.all()
+        
+        # Get latest scan
+        latest_scan = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        
+        # Get some sample directories from latest scan
+        sample_dirs = FileRecord.query.filter(
+            FileRecord.scan_id == latest_scan.id if latest_scan else None,
+            FileRecord.is_directory == True
+        ).limit(10).all()
+        
+        return jsonify({
+            'data_path': data_path,
+            'total_records': len(totals),
+            'latest_scan_id': latest_scan.id if latest_scan else None,
+            'sample_totals': [
+                {
+                    'path': t.path,
+                    'name': t.name,
+                    'total_size': t.total_size,
+                    'file_count': t.file_count,
+                    'depth': t.depth,
+                    'scan_id': t.scan_id
+                } for t in totals[:10]
+            ],
+            'sample_directories': [
+                {
+                    'path': d.path,
+                    'name': d.name,
+                    'parent_path': d.parent_path
+                } for d in sample_dirs
+            ]
+        })
+    except Exception as e:
+        logger.error(f"Error in debug_directory_totals: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Add manual trigger for pre-calculation
+@app.route('/api/debug/calculate-totals', methods=['POST'])
+def manual_calculate_totals():
+    """Manually trigger directory totals calculation for debugging"""
+    try:
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        
+        # Get the latest completed scan
+        latest_scan = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        
+        if not latest_scan:
+            return jsonify({'error': 'No completed scan found'}), 400
+        
+        logger.info(f"Manually calculating totals for scan {latest_scan.id}")
+        calculate_directory_totals_during_scan(data_path, latest_scan.id)
+        
+        return jsonify({
+            'message': f'Directory totals calculated for scan {latest_scan.id}',
+            'scan_id': latest_scan.id
+        })
+    except Exception as e:
+        logger.error(f"Error in manual_calculate_totals: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # Application startup
 if __name__ == '__main__':
