@@ -19,6 +19,7 @@ interface ScanStatus {
   percentage_complete?: number
   elapsed_time?: string
   estimated_duration?: string
+  is_first_scan?: boolean
 }
 
 interface AnalyticsOverview {
@@ -211,7 +212,7 @@ const Dashboard: React.FC = () => {
                     Elapsed: {scanStatus.elapsed_time}
                   </p>
                 )}
-                {scanStatus.estimated_completion && (
+                {scanStatus.estimated_completion && !scanStatus.is_first_scan && (
                   <p className="text-xs text-blue-700 dark:text-blue-300">
                     Estimated completion: {new Date(scanStatus.estimated_completion).toLocaleString()}
                   </p>
@@ -222,7 +223,7 @@ const Dashboard: React.FC = () => {
               <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
                 {scanStatus.total_size_formatted}
               </p>
-              {scanStatus.percentage_complete !== undefined && (
+              {scanStatus.percentage_complete !== undefined && scanStatus.percentage_complete !== null && !scanStatus.is_first_scan && (
                 <div className="mt-2">
                   <div className="w-32 bg-blue-200 rounded-full h-2 dark:bg-blue-700">
                     <div 

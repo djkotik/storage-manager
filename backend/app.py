@@ -58,11 +58,25 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 # Initialize extensions
+db = SQLAlchemy(app)
+CORS(app)
+
+# Enable SQLite WAL mode for better concurrency
+def enable_wal_mode():
+    """Enable WAL mode for better database concurrency"""
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(db.text('PRAGMA journal_mode=WAL'))
+            conn.execute(db.text('PRAGMA synchronous=NORMAL'))
+            conn.execute(db.text('PRAGMA cache_size=10000'))
+            conn.execute(db.text('PRAGMA temp_store=MEMORY'))
+            conn.commit()
+        logger.info("SQLite WAL mode enabled")
+    except Exception as e:
+        logger.warning(f"Could not enable WAL mode: {e}")
 
 # Define the path to the built frontend files
 FRONTEND_DIST_DIR = os.path.join(app.root_path, 'static') # This should be /app/static in Docker
-db = SQLAlchemy(app)
-CORS(app)
 
 # Global scanner state
 scanner_state = {
@@ -269,6 +283,28 @@ class DirectoryTotal(db.Model):
 with app.app_context():
     db.create_all()
     logger.info("Database tables created")
+    
+    # Enable WAL mode for better concurrency
+    enable_wal_mode()
+    
+    # Create indexes
+    try:
+        create_indexes()
+        logger.info("Database indexes created successfully")
+    except Exception as e:
+        logger.warning(f"Could not create indexes: {e}")
+    
+    # Initialize default settings if they don't exist
+    if not get_setting('scan_time'):
+        set_setting('scan_time', '01:00')
+    if not get_setting('max_scan_duration'):
+        set_setting('max_scan_duration', '6')
+    if not get_setting('theme'):
+        set_setting('theme', 'unraid')
+    if not get_setting('themes'):
+        set_setting('themes', 'unraid,plex,light,dark')
+    if not get_setting('max_items_per_folder'):
+        set_setting('max_items_per_folder', '100')
 
 # Add database indexes for better performance
 def create_indexes():
@@ -472,6 +508,9 @@ def scan_directory(data_path, scan_id):
             logger.info("Existing files cleared")
             
             logger.info("Starting file system traversal...")
+            batch_size = 100  # Commit every 100 files to reduce lock time
+            current_batch = 0
+            
             for root, dirs, files in os.walk(data_path):
                 if not scanner_state['scanning']:
                     logger.info("Scan stopped by user request")
@@ -502,6 +541,7 @@ def scan_directory(data_path, scan_id):
                             )
                             db.session.add(dir_record)
                             scanner_state['total_directories'] += 1
+                            current_batch += 1
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing directory {dir_path}: {e}")
                         continue
@@ -534,7 +574,6 @@ def scan_directory(data_path, scan_id):
                                 scan_id=scan_id
                             )
                             db.session.add(file_record)
-                            db.session.flush()  # Get the file record ID
                             
                             # Check if this is a media file
                             if is_media_file(file_path, extension):
@@ -562,13 +601,15 @@ def scan_directory(data_path, scan_id):
                             
                             scanner_state['total_files'] += 1
                             scanner_state['total_size'] += file_size
+                            current_batch += 1
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                         continue
                 
-                # Commit periodically and log progress
-                if scanner_state['total_files'] % 1000 == 0:
+                # Commit periodically to reduce database lock time
+                if current_batch >= batch_size:
                     db.session.commit()
+                    current_batch = 0
                     logger.info(f"=== SCAN PROGRESS ===")
                     logger.info(f"Files processed: {scanner_state['total_files']:,}")
                     logger.info(f"Directories processed: {scanner_state['total_directories']:,}")
@@ -642,26 +683,6 @@ def scan_directory(data_path, scan_id):
             scanner_state['current_path'] = ''
             logger.info("Scan state cleaned up")
 
-def calculate_directory_totals(directory_path):
-    """Calculate total size and file count for a directory tree efficiently"""
-    try:
-        # Get all files within this directory tree
-        files_data = db.session.query(
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('file_count')
-        ).filter(
-            FileRecord.path.like(f"{directory_path}/%"),
-            FileRecord.is_directory == False
-        ).first()
-        
-        return {
-            'total_size': files_data.total_size or 0,
-            'file_count': files_data.file_count or 0
-        }
-    except Exception as e:
-        logger.error(f"Error calculating totals for {directory_path}: {e}")
-        return {'total_size': 0, 'file_count': 0}
-
 def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
     """Calculate and store directory totals for top levels during scan"""
     try:
@@ -733,16 +754,44 @@ def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
         db.session.rollback()
 
 def get_directory_total(path):
-    """Get pre-calculated directory totals"""
+    """Get pre-calculated totals for a directory"""
     try:
-        total = DirectoryTotal.query.filter_by(path=path).first()
+        # Get the latest completed scan
+        latest_scan = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(desc(ScanRecord.start_time)).first()
+        
+        if not latest_scan:
+            return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
+        
+        # Try to get pre-calculated totals
+        total = DirectoryTotal.query.filter(
+            DirectoryTotal.path == path,
+            DirectoryTotal.scan_id == latest_scan.id
+        ).first()
+        
         if total:
             return {
                 'total_size': total.total_size,
                 'file_count': total.file_count,
                 'directory_count': total.directory_count
             }
-        return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
+        else:
+            # Fallback: calculate on-the-fly
+            totals = db.session.query(
+                func.sum(FileRecord.size).label('total_size'),
+                func.count(FileRecord.id).label('file_count'),
+                func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('directory_count')
+            ).filter(
+                FileRecord.path.like(f"{path}/%"),
+                FileRecord.scan_id == latest_scan.id
+            ).first()
+            
+            return {
+                'total_size': totals.total_size or 0,
+                'file_count': totals.file_count or 0,
+                'directory_count': totals.directory_count or 0
+            }
     except Exception as e:
         logger.error(f"Error getting directory total for {path}: {e}")
         return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
@@ -1271,12 +1320,14 @@ def get_scan_status():
                 
                 status_data['elapsed_time'] = str(elapsed_time).split('.')[0]  # Remove microseconds
                 status_data['estimated_duration'] = str(avg_duration).split('.')[0]  # Remove microseconds
+                status_data['is_first_scan'] = False
             else:
-                # No previous scans to base estimate on
+                # No previous scans to base estimate on (first scan)
                 status_data['estimated_completion'] = None
-                status_data['percentage_complete'] = 0
-                status_data['elapsed_time'] = None
+                status_data['percentage_complete'] = None  # Hide progress bar for first scan
+                status_data['elapsed_time'] = str(datetime.now() - scanner_state['start_time']).split('.')[0]
                 status_data['estimated_duration'] = None
+                status_data['is_first_scan'] = True
         
         return jsonify(status_data)
     except Exception as e:
@@ -2314,6 +2365,9 @@ if __name__ == '__main__':
         try:
             db.create_all()
             logger.info("Database tables created")
+            
+            # Enable WAL mode for better concurrency
+            enable_wal_mode()
             
             # Create indexes
             try:
