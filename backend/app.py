@@ -424,34 +424,7 @@ def create_indexes():
     except Exception as e:
         logger.warning(f"Could not create indexes: {e}")
 
-# Create database tables
-with app.app_context():
-    db.create_all()
-    logger.info("Database tables created")
-    
-    # Enable WAL mode for better concurrency
-    enable_wal_mode()
-    
-    # Create indexes
-    try:
-        create_indexes()
-        logger.info("Database indexes created successfully")
-    except Exception as e:
-        logger.warning(f"Could not create indexes: {e}")
-    
-    # Initialize default settings if they don't exist
-    default_settings = {
-        'scan_time': '01:00',
-        'max_scan_duration': '6',
-        'theme': 'unraid',
-        'themes': 'unraid,plex,light,dark',
-        'max_items_per_folder': '100',
-        'max_shares_to_scan': '0'  # 0 = unlimited
-    }
-    
-    for key, value in default_settings.items():
-        if not get_setting(key):
-            set_setting(key, value)
+
 
 def detect_duplicates(scan_id):
     """Detect duplicate files based on size and content hash"""
