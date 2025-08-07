@@ -1160,16 +1160,16 @@ def get_directory_files(directory_id):
         logger.error(f"Error getting directory files: {e}")
         return jsonify({'error': 'Failed to get directory files'}), 500
 
-# Optimize the top-shares endpoint to use pre-calculated totals
+# Optimize the top-shares endpoint to use pre-calculated totals with fallback
 @app.route('/api/analytics/top-shares')
 @cache_result()
 def get_top_shares():
-    """Get top folder shares by size - using pre-calculated totals"""
+    """Get top folder shares by size - using pre-calculated totals with fallback"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Get pre-calculated totals for top-level directories
+        # First try to get pre-calculated totals
         top_shares_data = db.session.query(
             DirectoryTotal.path,
             DirectoryTotal.name,
@@ -1180,17 +1180,46 @@ def get_top_shares():
             DirectoryTotal.depth == 1  # Top-level only
         ).all()
         
-        logger.info(f"Found {len(top_shares_data)} top-level directories with pre-calculated totals")
-        
-        top_shares = []
-        for share in top_shares_data:
-            top_shares.append({
-                'name': share.name,
-                'path': share.path,
-                'size': share.total_size,
-                'size_formatted': format_size(share.total_size),
-                'file_count': share.file_count
-            })
+        if top_shares_data:
+            logger.info(f"Found {len(top_shares_data)} top-level directories with pre-calculated totals")
+            
+            top_shares = []
+            for share in top_shares_data:
+                top_shares.append({
+                    'name': share.name,
+                    'path': share.path,
+                    'size': share.total_size,
+                    'size_formatted': format_size(share.total_size),
+                    'file_count': share.file_count
+                })
+        else:
+            # Fallback to old approach if no pre-calculated data
+            logger.info("No pre-calculated totals found, using fallback approach")
+            
+            shares_data = db.session.query(
+                FileRecord.name,
+                FileRecord.path,
+                FileRecord.id,
+                func.sum(FileRecord.size).label('total_size'),
+                func.count(FileRecord.id).label('total_count'),
+                func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+            ).filter(
+                FileRecord.parent_path == data_path
+            ).group_by(
+                FileRecord.name,
+                FileRecord.path,
+                FileRecord.id
+            ).all()
+            
+            top_shares = []
+            for share in shares_data:
+                top_shares.append({
+                    'name': share.name,
+                    'path': share.path,
+                    'size': share.total_size or 0,
+                    'size_formatted': format_size(share.total_size or 0),
+                    'file_count': share.file_count or 0
+                })
         
         # Sort by total size and take top 10
         top_shares.sort(key=lambda x: x['size'], reverse=True)
@@ -1204,16 +1233,16 @@ def get_top_shares():
         logger.error(f"Error getting top shares: {e}")
         return jsonify({'error': 'Failed to get top shares'}), 500
 
-# Optimize the file tree endpoint to use pre-calculated totals
+# Optimize the file tree endpoint to use pre-calculated totals with fallback
 @app.route('/api/files/tree')
 @cache_result()
 def get_file_tree():
-    """Get hierarchical file tree - using pre-calculated totals"""
+    """Get hierarchical file tree - using pre-calculated totals with fallback"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Get pre-calculated totals for top-level directories
+        # First try to get pre-calculated totals
         tree_data = db.session.query(
             DirectoryTotal.path,
             DirectoryTotal.name,
@@ -1224,23 +1253,55 @@ def get_file_tree():
             DirectoryTotal.depth == 1  # Top-level only
         ).all()
         
-        logger.info(f"Found {len(tree_data)} top-level directories with pre-calculated totals")
-        
-        tree = []
-        for item in tree_data:
-            # Get the FileRecord ID for this directory
-            file_record = FileRecord.query.filter_by(path=item.path).first()
+        if tree_data:
+            logger.info(f"Found {len(tree_data)} top-level directories with pre-calculated totals")
             
-            tree.append({
-                'id': file_record.id if file_record else 0,
-                'name': item.name,
-                'path': item.path,
-                'size': item.total_size,
-                'size_formatted': format_size(item.total_size),
-                'file_count': item.file_count,
-                'is_directory': True,
-                'children': []  # Will be populated when expanded
-            })
+            tree = []
+            for item in tree_data:
+                # Get the FileRecord ID for this directory
+                file_record = FileRecord.query.filter_by(path=item.path).first()
+                
+                tree.append({
+                    'id': file_record.id if file_record else 0,
+                    'name': item.name,
+                    'path': item.path,
+                    'size': item.total_size,
+                    'size_formatted': format_size(item.total_size),
+                    'file_count': item.file_count,
+                    'is_directory': True,
+                    'children': []  # Will be populated when expanded
+                })
+        else:
+            # Fallback to old approach if no pre-calculated data
+            logger.info("No pre-calculated totals found, using fallback approach")
+            
+            shares_data = db.session.query(
+                FileRecord.name,
+                FileRecord.path,
+                FileRecord.id,
+                func.sum(FileRecord.size).label('total_size'),
+                func.count(FileRecord.id).label('total_count'),
+                func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+            ).filter(
+                FileRecord.parent_path == data_path
+            ).group_by(
+                FileRecord.name,
+                FileRecord.path,
+                FileRecord.id
+            ).all()
+            
+            tree = []
+            for share in shares_data:
+                tree.append({
+                    'id': share.id,
+                    'name': share.name,
+                    'path': share.path,
+                    'size': share.total_size or 0,
+                    'size_formatted': format_size(share.total_size or 0),
+                    'file_count': share.file_count or 0,
+                    'is_directory': True,
+                    'children': []  # Will be populated when expanded
+                })
         
         # Sort by total size
         tree.sort(key=lambda x: x['size'], reverse=True)
@@ -1258,6 +1319,9 @@ def get_directory_children(directory_id):
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
+        # Get the limit from settings (default 100)
+        max_items = int(get_setting('max_items_per_folder', '100'))
+        
         # Get all direct children (both files and directories)
         children = db.session.query(
             FileRecord.name,
@@ -1269,7 +1333,7 @@ def get_directory_children(directory_id):
             FileRecord.modified_time
         ).filter(
             FileRecord.parent_path == directory.path
-        ).all()
+        ).order_by(FileRecord.size.desc()).limit(max_items).all()
         
         result = []
         for child in children:
@@ -1804,6 +1868,8 @@ if __name__ == '__main__':
                 set_setting('theme', 'unraid')
             if not get_setting('themes'):
                 set_setting('themes', 'unraid,plex,light,dark')
+            if not get_setting('max_items_per_folder'):
+                set_setting('max_items_per_folder', '100')
             
             logger.info("Default settings initialized")
             

@@ -6,6 +6,7 @@ interface AppSettings {
   data_path: string
   scan_time: string
   max_scan_duration: number
+  max_items_per_folder: number
   themes: string[]
 }
 
@@ -16,6 +17,7 @@ const Settings: React.FC = () => {
   const [resetLoading, setResetLoading] = useState(false)
   const [scanTime, setScanTime] = useState('01:00')
   const [maxScanDuration, setMaxScanDuration] = useState(6)
+  const [maxItemsPerFolder, setMaxItemsPerFolder] = useState(100)
 
   useEffect(() => {
     fetchSettings()
@@ -28,6 +30,7 @@ const Settings: React.FC = () => {
       setSettings(response.data)
       setScanTime(response.data.scan_time)
       setMaxScanDuration(response.data.max_scan_duration)
+      setMaxItemsPerFolder(response.data.max_items_per_folder || 100)
     } catch (error) {
       console.error('Error fetching settings:', error)
     } finally {
@@ -41,6 +44,7 @@ const Settings: React.FC = () => {
       await axios.post('/api/settings', {
         scan_time: scanTime,
         max_scan_duration: maxScanDuration,
+        max_items_per_folder: maxItemsPerFolder,
       })
       // Show success message
       alert('Settings saved successfully!')
@@ -143,6 +147,23 @@ const Settings: React.FC = () => {
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Maximum time to allow scans to run
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Max Items per Folder
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="1000"
+              value={maxItemsPerFolder}
+              onChange={(e) => setMaxItemsPerFolder(Number(e.target.value))}
+              className="input"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Maximum number of items to scan per folder
             </p>
           </div>
 
