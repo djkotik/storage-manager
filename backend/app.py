@@ -320,19 +320,31 @@ class TrashBin(db.Model):
     expires_at = db.Column(db.DateTime)  # When the file will be permanently deleted
     restored = db.Column(db.Boolean, default=False)
 
-class DirectoryTotal(db.Model):
-    """Model for storing pre-calculated directory totals"""
-    __tablename__ = 'directory_totals'
+# Replace the DirectoryTotal model with a more comprehensive FolderInfo model
+class FolderInfo(db.Model):
+    """Model for storing comprehensive folder information"""
+    __tablename__ = 'folder_info'
     
     id = db.Column(db.Integer, primary_key=True)
-    path = db.Column(db.String(2000), nullable=False, unique=True)
+    path = db.Column(db.String(2000), nullable=False)
     name = db.Column(db.String(500), nullable=False)
-    total_size = db.Column(db.Integer, default=0)  # Total size in bytes
-    file_count = db.Column(db.Integer, default=0)
-    directory_count = db.Column(db.Integer, default=0)
+    parent_path = db.Column(db.String(2000))
+    total_size = db.Column(db.Integer, default=0)  # Total size in bytes (including subdirectories)
+    file_count = db.Column(db.Integer, default=0)  # Total files (including subdirectories)
+    directory_count = db.Column(db.Integer, default=0)  # Total directories (including subdirectories)
+    direct_file_count = db.Column(db.Integer, default=0)  # Files directly in this folder
+    direct_directory_count = db.Column(db.Integer, default=0)  # Directories directly in this folder
     depth = db.Column(db.Integer, default=0)  # Directory depth from root
     scan_id = db.Column(db.Integer)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Indexes for performance
+    __table_args__ = (
+        db.Index('idx_folder_path', 'path'),
+        db.Index('idx_folder_parent', 'parent_path'),
+        db.Index('idx_folder_scan', 'scan_id'),
+        db.Index('idx_folder_depth', 'depth'),
+    )
 
 # Create database tables
 with app.app_context():
@@ -698,10 +710,10 @@ def scan_directory(data_path, scan_id):
             save_storage_history(scan_id)
             logger.info("Storage history saved")
             
-            # Calculate directory totals for the top 3 levels
-            logger.info("Calculating directory totals...")
-            calculate_directory_totals_during_scan(data_path, scan_id)
-            logger.info("Directory totals calculated")
+            # Calculate comprehensive folder totals
+            logger.info("Calculating folder totals...")
+            calculate_folder_totals_during_scan(data_path, scan_id)
+            logger.info("Folder totals calculated")
             
             logger.info(f"=== SCAN COMPLETED ===")
             logger.info(f"Scan ID: {scan_id}")
@@ -738,78 +750,113 @@ def scan_directory(data_path, scan_id):
             scanner_state['current_path'] = ''
             logger.info("Scan state cleaned up")
 
-def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
-    """Calculate and store directory totals for top levels during scan"""
+def calculate_folder_totals_during_scan(data_path, scan_id):
+    """Calculate and store comprehensive folder information during scan"""
     try:
-        logger.info(f"Calculating directory totals for scan {scan_id}, max depth {max_depth}")
+        logger.info(f"Calculating folder totals for scan {scan_id}")
         
-        # Clear existing totals for this scan
-        DirectoryTotal.query.filter_by(scan_id=scan_id).delete()
+        # Clear existing folder info for this scan
+        FolderInfo.query.filter_by(scan_id=scan_id).delete()
         db.session.commit()
         
-        # Get all directories from this scan
+        # Get all directories from this scan, ordered by path length (process parents first)
         directories = db.session.query(
             FileRecord.path,
-            FileRecord.name
+            FileRecord.name,
+            FileRecord.parent_path
         ).filter(
             FileRecord.scan_id == scan_id,
             FileRecord.is_directory == True
-        ).all()
+        ).order_by(db.func.length(FileRecord.path)).all()
         
         logger.info(f"Found {len(directories)} directories to process")
         
-        # Calculate depth for each directory
+        # Create a dictionary to store folder info
+        folder_info = {}
+        
+        # Process each directory
         for directory in directories:
+            path = directory.path
+            name = directory.name
+            parent_path = directory.parent_path
+            
             # Calculate depth relative to data_path
-            relative_path = directory.path.replace(data_path, '').strip('/')
+            relative_path = path.replace(data_path, '').strip('/')
             depth = len(relative_path.split('/')) if relative_path else 0
             
-            logger.info(f"Processing directory: {directory.path}, depth: {depth}")
+            # Calculate direct children (files and directories directly in this folder)
+            direct_children = db.session.query(
+                func.count(FileRecord.id).label('direct_file_count'),
+                func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('direct_directory_count')
+            ).filter(
+                FileRecord.parent_path == path,
+                FileRecord.scan_id == scan_id
+            ).first()
             
-            if depth <= max_depth:
-                # Calculate totals for this directory (including the directory itself)
-                totals = db.session.query(
-                    func.sum(FileRecord.size).label('total_size'),
-                    func.count(FileRecord.id).label('file_count'),
-                    func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('directory_count')
-                ).filter(
-                    FileRecord.path.like(f"{directory.path}/%"),
-                    FileRecord.scan_id == scan_id
-                ).first()
-                
-                # Also get the directory's own size (should be 0 for directories)
-                dir_size = db.session.query(FileRecord.size).filter(
-                    FileRecord.path == directory.path,
-                    FileRecord.scan_id == scan_id
-                ).scalar() or 0
-                
-                total_size = (totals.total_size or 0) + dir_size
-                file_count = totals.file_count or 0
-                directory_count = totals.directory_count or 0
-                
-                logger.info(f"Directory {directory.name}: total_size={total_size}, file_count={file_count}, directory_count={directory_count}")
-                
-                # Store the totals
-                new_total = DirectoryTotal(
-                    path=directory.path,
-                    name=directory.name,
-                    total_size=total_size,
-                    file_count=file_count,
-                    directory_count=directory_count,
-                    depth=depth,
-                    scan_id=scan_id
-                )
-                db.session.add(new_total)
+            # Calculate total size of files directly in this folder
+            direct_size = db.session.query(
+                func.sum(FileRecord.size).label('direct_size')
+            ).filter(
+                FileRecord.parent_path == path,
+                FileRecord.is_directory == False,
+                FileRecord.scan_id == scan_id
+            ).scalar() or 0
+            
+            # Initialize totals
+            total_size = direct_size
+            total_file_count = direct_children.direct_file_count or 0
+            total_directory_count = direct_children.direct_directory_count or 0
+            
+            # Add totals from subdirectories (already calculated due to ordering by path length)
+            for subfolder_path, subfolder_info in folder_info.items():
+                if subfolder_path.startswith(path + '/') and subfolder_path != path:
+                    total_size += subfolder_info['total_size']
+                    total_file_count += subfolder_info['file_count']
+                    total_directory_count += subfolder_info['directory_count']
+            
+            # Store folder info
+            folder_info[path] = {
+                'name': name,
+                'parent_path': parent_path,
+                'total_size': total_size,
+                'file_count': total_file_count,
+                'directory_count': total_directory_count,
+                'direct_file_count': direct_children.direct_file_count or 0,
+                'direct_directory_count': direct_children.direct_directory_count or 0,
+                'depth': depth
+            }
+            
+            # Create database record
+            folder_record = FolderInfo(
+                path=path,
+                name=name,
+                parent_path=parent_path,
+                total_size=total_size,
+                file_count=total_file_count,
+                directory_count=total_directory_count,
+                direct_file_count=direct_children.direct_file_count or 0,
+                direct_directory_count=direct_children.direct_directory_count or 0,
+                depth=depth,
+                scan_id=scan_id
+            )
+            db.session.add(folder_record)
+            
+            # Commit in batches to avoid memory issues
+            if len(folder_info) % 100 == 0:
+                db.session.commit()
+                logger.info(f"Processed {len(folder_info)} folders")
         
+        # Final commit
         db.session.commit()
-        logger.info(f"Directory totals calculated and stored for scan {scan_id}")
+        logger.info(f"Folder totals calculated and stored for scan {scan_id}: {len(folder_info)} folders")
         
     except Exception as e:
-        logger.error(f"Error calculating directory totals: {e}")
+        logger.error(f"Error calculating folder totals: {e}")
         db.session.rollback()
+        raise
 
-def get_directory_total(path):
-    """Get pre-calculated totals for a directory"""
+def get_folder_info(path):
+    """Get comprehensive folder information for a directory"""
     try:
         # Get the latest completed scan
         latest_scan = ScanRecord.query.filter(
@@ -817,19 +864,27 @@ def get_directory_total(path):
         ).order_by(desc(ScanRecord.start_time)).first()
         
         if not latest_scan:
-            return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
+            return {
+                'total_size': 0, 
+                'file_count': 0, 
+                'directory_count': 0,
+                'direct_file_count': 0,
+                'direct_directory_count': 0
+            }
         
-        # Try to get pre-calculated totals
-        total = DirectoryTotal.query.filter(
-            DirectoryTotal.path == path,
-            DirectoryTotal.scan_id == latest_scan.id
+        # Try to get pre-calculated folder info
+        folder_info = FolderInfo.query.filter(
+            FolderInfo.path == path,
+            FolderInfo.scan_id == latest_scan.id
         ).first()
         
-        if total:
+        if folder_info:
             return {
-                'total_size': total.total_size,
-                'file_count': total.file_count,
-                'directory_count': total.directory_count
+                'total_size': folder_info.total_size,
+                'file_count': folder_info.file_count,
+                'directory_count': folder_info.directory_count,
+                'direct_file_count': folder_info.direct_file_count,
+                'direct_directory_count': folder_info.direct_directory_count
             }
         else:
             # Fallback: calculate on-the-fly
@@ -845,11 +900,19 @@ def get_directory_total(path):
             return {
                 'total_size': totals.total_size or 0,
                 'file_count': totals.file_count or 0,
-                'directory_count': totals.directory_count or 0
+                'directory_count': totals.directory_count or 0,
+                'direct_file_count': 0,  # Would need separate query
+                'direct_directory_count': 0  # Would need separate query
             }
     except Exception as e:
-        logger.error(f"Error getting directory total for {path}: {e}")
-        return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
+        logger.error(f"Error getting folder info for {path}: {e}")
+        return {
+            'total_size': 0, 
+            'file_count': 0, 
+            'directory_count': 0,
+            'direct_file_count': 0,
+            'direct_directory_count': 0
+        }
 
 # Routes
 @app.route('/')
@@ -1559,14 +1622,14 @@ def get_top_shares():
         
         # First try to get pre-calculated totals
         top_shares_data = db.session.query(
-            DirectoryTotal.path,
-            DirectoryTotal.name,
-            DirectoryTotal.total_size,
-            DirectoryTotal.file_count
+            FolderInfo.path,
+            FolderInfo.name,
+            FolderInfo.total_size,
+            FolderInfo.file_count
         ).filter(
-            DirectoryTotal.path.like(f"{data_path}/%"),
-            DirectoryTotal.depth == 1  # Top-level only
-        ).all()
+            FolderInfo.path.like(f"{data_path}/%"),
+            FolderInfo.depth == 1  # Top-level only
+        ).order_by(FolderInfo.total_size.desc()).all()
         
         if top_shares_data:
             logger.info(f"Found {len(top_shares_data)} top-level directories with pre-calculated totals")
@@ -1641,14 +1704,14 @@ def get_file_tree():
         
         # First try to get pre-calculated totals
         tree_data = db.session.query(
-            DirectoryTotal.path,
-            DirectoryTotal.name,
-            DirectoryTotal.total_size,
-            DirectoryTotal.file_count
+            FolderInfo.path,
+            FolderInfo.name,
+            FolderInfo.total_size,
+            FolderInfo.file_count
         ).filter(
-            DirectoryTotal.path.like(f"{data_path}/%"),
-            DirectoryTotal.depth == 1  # Top-level only
-        ).all()
+            FolderInfo.path.like(f"{data_path}/%"),
+            FolderInfo.depth == 1  # Top-level only
+        ).order_by(FolderInfo.total_size.desc()).all()
         
         if tree_data:
             logger.info(f"Found {len(tree_data)} top-level directories with pre-calculated totals")
@@ -1746,30 +1809,17 @@ def get_directory_children(directory_id):
         result = []
         for child in children:
             if child.is_directory:
-                # Check if we have pre-calculated totals for this directory
-                totals = get_directory_total(child.path)
-                
-                # If no pre-calculated totals, calculate on-the-fly
-                if totals['total_size'] == 0:
-                    # Calculate totals for this directory
-                    dir_totals = db.session.query(
-                        func.sum(FileRecord.size).label('total_size'),
-                        func.count(FileRecord.id).label('file_count')
-                    ).filter(
-                        FileRecord.path.like(f"{child.path}/%"),
-                        FileRecord.scan_id == directory.scan_id
-                    ).first()
-                    
-                    totals['total_size'] = dir_totals.total_size or 0
-                    totals['file_count'] = dir_totals.file_count or 0
+                # Get comprehensive folder info
+                folder_info = get_folder_info(child.path)
                 
                 result.append({
                     'id': child.id,
                     'name': child.name,
                     'path': child.path,
-                    'size': totals['total_size'],
-                    'size_formatted': format_size(totals['total_size']),
-                    'file_count': totals['file_count'],
+                    'size': folder_info['total_size'],
+                    'size_formatted': format_size(folder_info['total_size']),
+                    'file_count': folder_info['file_count'],
+                    'directory_count': folder_info['directory_count'],
                     'is_directory': True,
                     'children': []
                 })
@@ -2374,8 +2424,8 @@ def debug_directory_totals():
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         
-        # Get all directory totals
-        totals = DirectoryTotal.query.all()
+        # Get all folder info
+        totals = FolderInfo.query.all()
         
         # Get latest scan
         latest_scan = ScanRecord.query.filter(
@@ -2429,11 +2479,11 @@ def manual_calculate_totals():
         if not latest_scan:
             return jsonify({'error': 'No completed scan found'}), 400
         
-        logger.info(f"Manually calculating totals for scan {latest_scan.id}")
-        calculate_directory_totals_during_scan(data_path, latest_scan.id)
+        logger.info(f"Manually calculating folder totals for scan {latest_scan.id}")
+        calculate_folder_totals_during_scan(data_path, latest_scan.id)
         
         return jsonify({
-            'message': f'Directory totals calculated for scan {latest_scan.id}',
+            'message': f'Folder totals calculated for scan {latest_scan.id}',
             'scan_id': latest_scan.id
         })
     except Exception as e:
@@ -2487,6 +2537,159 @@ def get_database_status():
             'error': str(e),
             'database_accessible': False
         }), 500
+
+# Add new endpoint to get folder information for any path
+@app.route('/api/folder/<path:folder_path>')
+@retry_on_db_lock(max_retries=3, delay=2)
+def get_folder_info_by_path(folder_path):
+    """Get comprehensive folder information for a specific path"""
+    try:
+        # Get the latest completed scan
+        latest_scan = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(desc(ScanRecord.start_time)).first()
+        
+        if not latest_scan:
+            return jsonify({'error': 'No completed scan found'}), 404
+        
+        # Get folder info from database
+        folder_info = FolderInfo.query.filter(
+            FolderInfo.path == folder_path,
+            FolderInfo.scan_id == latest_scan.id
+        ).first()
+        
+        if folder_info:
+            return jsonify({
+                'path': folder_info.path,
+                'name': folder_info.name,
+                'parent_path': folder_info.parent_path,
+                'total_size': folder_info.total_size,
+                'total_size_formatted': format_size(folder_info.total_size),
+                'file_count': folder_info.file_count,
+                'directory_count': folder_info.directory_count,
+                'direct_file_count': folder_info.direct_file_count,
+                'direct_directory_count': folder_info.direct_directory_count,
+                'depth': folder_info.depth,
+                'scan_id': folder_info.scan_id
+            })
+        else:
+            # Fallback: calculate on-the-fly
+            totals = db.session.query(
+                func.sum(FileRecord.size).label('total_size'),
+                func.count(FileRecord.id).label('file_count'),
+                func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('directory_count')
+            ).filter(
+                FileRecord.path.like(f"{folder_path}/%"),
+                FileRecord.scan_id == latest_scan.id
+            ).first()
+            
+            return jsonify({
+                'path': folder_path,
+                'name': os.path.basename(folder_path),
+                'parent_path': os.path.dirname(folder_path),
+                'total_size': totals.total_size or 0,
+                'total_size_formatted': format_size(totals.total_size or 0),
+                'file_count': totals.file_count or 0,
+                'directory_count': totals.directory_count or 0,
+                'direct_file_count': 0,  # Would need separate query
+                'direct_directory_count': 0,  # Would need separate query
+                'depth': len(folder_path.split('/')),
+                'scan_id': latest_scan.id
+            })
+            
+    except Exception as e:
+        logger.error(f"Error getting folder info for {folder_path}: {e}")
+        return jsonify({'error': 'Failed to get folder information'}), 500
+
+# Add new endpoint to get folder children with detailed info
+@app.route('/api/folder/<path:folder_path>/children')
+@retry_on_db_lock(max_retries=3, delay=2)
+def get_folder_children_by_path(folder_path):
+    """Get children of a folder with detailed information"""
+    try:
+        # Get the latest completed scan
+        latest_scan = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(desc(ScanRecord.start_time)).first()
+        
+        if not latest_scan:
+            return jsonify({'error': 'No completed scan found'}), 404
+        
+        # Get direct children (files and directories)
+        children = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory,
+            FileRecord.size,
+            FileRecord.extension,
+            FileRecord.modified_time
+        ).filter(
+            FileRecord.parent_path == folder_path,
+            FileRecord.scan_id == latest_scan.id
+        ).order_by(FileRecord.size.desc()).all()
+        
+        result = []
+        for child in children:
+            if child.is_directory:
+                # Get folder info for this directory
+                child_folder_info = FolderInfo.query.filter(
+                    FolderInfo.path == child.path,
+                    FolderInfo.scan_id == latest_scan.id
+                ).first()
+                
+                if child_folder_info:
+                    result.append({
+                        'id': child.id,
+                        'name': child.name,
+                        'path': child.path,
+                        'size': child_folder_info.total_size,
+                        'size_formatted': format_size(child_folder_info.total_size),
+                        'file_count': child_folder_info.file_count,
+                        'directory_count': child_folder_info.directory_count,
+                        'is_directory': True
+                    })
+                else:
+                    # Fallback calculation
+                    child_totals = db.session.query(
+                        func.sum(FileRecord.size).label('total_size'),
+                        func.count(FileRecord.id).label('file_count')
+                    ).filter(
+                        FileRecord.path.like(f"{child.path}/%"),
+                        FileRecord.scan_id == latest_scan.id
+                    ).first()
+                    
+                    result.append({
+                        'id': child.id,
+                        'name': child.name,
+                        'path': child.path,
+                        'size': child_totals.total_size or 0,
+                        'size_formatted': format_size(child_totals.total_size or 0),
+                        'file_count': child_totals.file_count or 0,
+                        'directory_count': 0,  # Would need separate query
+                        'is_directory': True
+                    })
+            else:
+                # For files, use the file's own size
+                result.append({
+                    'id': child.id,
+                    'name': child.name,
+                    'path': child.path,
+                    'size': child.size,
+                    'size_formatted': format_size(child.size),
+                    'extension': child.extension,
+                    'modified_time': child.modified_time.isoformat() if child.modified_time else None,
+                    'is_directory': False
+                })
+        
+        # Sort by total size (directories) or file size (files)
+        result.sort(key=lambda x: x['size'], reverse=True)
+        
+        return jsonify({'children': result})
+        
+    except Exception as e:
+        logger.error(f"Error getting folder children for {folder_path}: {e}")
+        return jsonify({'error': 'Failed to get folder children'}), 500
 
 # Application startup
 if __name__ == '__main__':
