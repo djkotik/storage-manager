@@ -1059,30 +1059,38 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Single optimized query that gets all the data we need
-        shares_data = db.session.query(
+        # Get all top-level directories
+        top_level_dirs = db.session.query(
             FileRecord.name,
             FileRecord.path,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('total_count'),
-            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+            FileRecord.id
         ).filter(
+            FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.name,
-            FileRecord.path
         ).all()
         
-        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
+        logger.info(f"Found {len(top_level_dirs)} top-level directories for top shares")
         
         top_shares = []
-        for share in shares_data:
+        for dir_info in top_level_dirs:
+            # Calculate total size of all files within this directory tree
+            total_size = db.session.query(func.sum(FileRecord.size)).filter(
+                FileRecord.path.like(f"{dir_info.path}/%"),
+                FileRecord.is_directory == False
+            ).scalar() or 0
+            
+            # Calculate file count within this directory tree
+            file_count = db.session.query(func.count(FileRecord.id)).filter(
+                FileRecord.path.like(f"{dir_info.path}/%"),
+                FileRecord.is_directory == False
+            ).scalar() or 0
+            
             top_shares.append({
-                'name': share.name,
-                'path': share.path,
-                'size': share.total_size or 0,
-                'size_formatted': format_size(share.total_size or 0),
-                'file_count': share.file_count or 0
+                'name': dir_info.name,
+                'path': dir_info.path,
+                'size': total_size,
+                'size_formatted': format_size(total_size),
+                'file_count': file_count
             })
         
         # Sort by total size and take top 10
@@ -1106,33 +1114,39 @@ def get_file_tree():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Single optimized query for all top-level directories with their sizes
-        shares_data = db.session.query(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('total_count'),
-            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
-        ).filter(
-            FileRecord.parent_path == data_path
-        ).group_by(
+        # Get all top-level directories
+        top_level_dirs = db.session.query(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id
+        ).filter(
+            FileRecord.is_directory == True,
+            FileRecord.parent_path == data_path
         ).all()
         
-        logger.info(f"Found {len(shares_data)} top-level directories")
+        logger.info(f"Found {len(top_level_dirs)} top-level directories")
         
         tree = []
-        for share in shares_data:
+        for dir_info in top_level_dirs:
+            # Calculate total size of all files within this directory tree
+            total_size = db.session.query(func.sum(FileRecord.size)).filter(
+                FileRecord.path.like(f"{dir_info.path}/%"),
+                FileRecord.is_directory == False
+            ).scalar() or 0
+            
+            # Calculate file count within this directory tree
+            file_count = db.session.query(func.count(FileRecord.id)).filter(
+                FileRecord.path.like(f"{dir_info.path}/%"),
+                FileRecord.is_directory == False
+            ).scalar() or 0
+            
             tree.append({
-                'id': share.id,
-                'name': share.name,
-                'path': share.path,
-                'size': share.total_size or 0,
-                'size_formatted': format_size(share.total_size or 0),
-                'file_count': share.file_count or 0,
+                'id': dir_info.id,
+                'name': dir_info.name,
+                'path': dir_info.path,
+                'size': total_size,
+                'size_formatted': format_size(total_size),
+                'file_count': file_count,
                 'is_directory': True,
                 'children': []  # Will be populated when expanded
             })
@@ -1153,38 +1167,57 @@ def get_directory_children(directory_id):
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
-        # Single optimized query for all children with their sizes
-        children_data = db.session.query(
+        # Get all direct children (both files and directories)
+        children = db.session.query(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id,
             FileRecord.is_directory,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('total_count'),
-            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+            FileRecord.size,
+            FileRecord.extension,
+            FileRecord.modified_time
         ).filter(
             FileRecord.parent_path == directory.path
-        ).group_by(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id,
-            FileRecord.is_directory
         ).all()
         
         result = []
-        for child in children_data:
-            result.append({
-                'id': child.id,
-                'name': child.name,
-                'path': child.path,
-                'size': child.total_size or 0,
-                'size_formatted': format_size(child.total_size or 0),
-                'file_count': child.file_count or 0,
-                'is_directory': child.is_directory,
-                'children': []
-            })
+        for child in children:
+            if child.is_directory:
+                # For directories, calculate total size and file count
+                total_size = db.session.query(func.sum(FileRecord.size)).filter(
+                    FileRecord.path.like(f"{child.path}/%"),
+                    FileRecord.is_directory == False
+                ).scalar() or 0
+                
+                file_count = db.session.query(func.count(FileRecord.id)).filter(
+                    FileRecord.path.like(f"{child.path}/%"),
+                    FileRecord.is_directory == False
+                ).scalar() or 0
+                
+                result.append({
+                    'id': child.id,
+                    'name': child.name,
+                    'path': child.path,
+                    'size': total_size,
+                    'size_formatted': format_size(total_size),
+                    'file_count': file_count,
+                    'is_directory': True,
+                    'children': []
+                })
+            else:
+                # For files, use the file's own size
+                result.append({
+                    'id': child.id,
+                    'name': child.name,
+                    'path': child.path,
+                    'size': child.size,
+                    'size_formatted': format_size(child.size),
+                    'extension': child.extension,
+                    'modified_time': child.modified_time.isoformat() if child.modified_time else None,
+                    'is_directory': False
+                })
         
-        # Sort by total size
+        # Sort by total size (directories) or file size (files)
         result.sort(key=lambda x: x['size'], reverse=True)
         
         return jsonify({'children': result})
