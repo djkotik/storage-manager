@@ -1079,29 +1079,32 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Get all top-level directories
-        top_level_dirs = db.session.query(
+        # Get all top-level directories with their immediate file counts and sizes
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == data_path
+        ).group_by(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id
-        ).filter(
-            FileRecord.is_directory == True,
-            FileRecord.parent_path == data_path
         ).all()
         
-        logger.info(f"Found {len(top_level_dirs)} top-level directories for top shares")
+        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
         
         top_shares = []
-        for dir_info in top_level_dirs:
-            # Calculate total size and file count for this directory tree
-            totals = calculate_directory_totals(dir_info.path)
-            
+        for share in shares_data:
             top_shares.append({
-                'name': dir_info.name,
-                'path': dir_info.path,
-                'size': totals['total_size'],
-                'size_formatted': format_size(totals['total_size']),
-                'file_count': totals['file_count']
+                'name': share.name,
+                'path': share.path,
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
+                'file_count': share.file_count or 0
             })
         
         # Sort by total size and take top 10
@@ -1125,30 +1128,33 @@ def get_file_tree():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Get all top-level directories
-        top_level_dirs = db.session.query(
+        # Get all top-level directories with their immediate file counts and sizes
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == data_path
+        ).group_by(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id
-        ).filter(
-            FileRecord.is_directory == True,
-            FileRecord.parent_path == data_path
         ).all()
         
-        logger.info(f"Found {len(top_level_dirs)} top-level directories")
+        logger.info(f"Found {len(shares_data)} top-level directories")
         
         tree = []
-        for dir_info in top_level_dirs:
-            # Calculate total size and file count for this directory tree
-            totals = calculate_directory_totals(dir_info.path)
-            
+        for share in shares_data:
             tree.append({
-                'id': dir_info.id,
-                'name': dir_info.name,
-                'path': dir_info.path,
-                'size': totals['total_size'],
-                'size_formatted': format_size(totals['total_size']),
-                'file_count': totals['file_count'],
+                'id': share.id,
+                'name': share.name,
+                'path': share.path,
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
+                'file_count': share.file_count or 0,
                 'is_directory': True,
                 'children': []  # Will be populated when expanded
             })
@@ -1169,8 +1175,21 @@ def get_directory_children(directory_id):
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
-        # Get all direct children (both files and directories)
-        children = db.session.query(
+        # Get all direct children (both files and directories) with their sizes
+        children_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory,
+            FileRecord.size,
+            FileRecord.extension,
+            FileRecord.modified_time,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == directory.path
+        ).group_by(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id,
@@ -1178,28 +1197,22 @@ def get_directory_children(directory_id):
             FileRecord.size,
             FileRecord.extension,
             FileRecord.modified_time
-        ).filter(
-            FileRecord.parent_path == directory.path
         ).all()
         
         result = []
-        for child in children:
+        for child in children_data:
             if child.is_directory:
-                # Calculate total size and file count for this subdirectory
-                totals = calculate_directory_totals(child.path)
-                
                 result.append({
                     'id': child.id,
                     'name': child.name,
                     'path': child.path,
-                    'size': totals['total_size'],
-                    'size_formatted': format_size(totals['total_size']),
-                    'file_count': totals['file_count'],
+                    'size': child.total_size or 0,
+                    'size_formatted': format_size(child.total_size or 0),
+                    'file_count': child.file_count or 0,
                     'is_directory': True,
                     'children': []
                 })
             else:
-                # For files, use the file's own size
                 result.append({
                     'id': child.id,
                     'name': child.name,
