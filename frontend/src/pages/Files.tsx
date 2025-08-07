@@ -13,6 +13,7 @@ interface FileItem {
   modified_time?: string
   permissions?: string
   children?: FileItem[]
+  files?: FileItem[]
   file_count?: number
 }
 
@@ -26,6 +27,7 @@ const Files: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
   const [loadingChildren, setLoadingChildren] = useState<Set<number>>(new Set())
+  const [loadingFiles, setLoadingFiles] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     fetchFileTree()
@@ -74,6 +76,37 @@ const Files: React.FC = () => {
     }
   }
 
+  const fetchDirectoryFiles = async (directoryId: number, directoryPath: string) => {
+    try {
+      setLoadingFiles(prev => new Set(prev).add(directoryId))
+      const response = await axios.get(`/api/files/tree/${directoryId}/files`)
+      
+      // Update the file tree to include the files
+      setFileTree(prevTree => {
+        const updateTree = (items: FileItem[]): FileItem[] => {
+          return items.map(item => {
+            if (item.id === directoryId) {
+              return {
+                ...item,
+                files: response.data.files
+              }
+            }
+            return item
+          })
+        }
+        return updateTree(prevTree)
+      })
+    } catch (error) {
+      console.error('Error fetching directory files:', error)
+    } finally {
+      setLoadingFiles(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(directoryId)
+        return newSet
+      })
+    }
+  }
+
   const toggleFolder = async (item: FileItem) => {
     const isExpanded = expandedFolders.has(item.path)
     const newExpanded = new Set(expandedFolders)
@@ -86,6 +119,10 @@ const Files: React.FC = () => {
       if (!item.children || item.children.length === 0) {
         await fetchDirectoryChildren(item.id, item.path)
       }
+      // Fetch files if not already loaded
+      if (!item.files || item.files.length === 0) {
+        await fetchDirectoryFiles(item.id, item.path)
+      }
     }
     setExpandedFolders(newExpanded)
   }
@@ -93,7 +130,9 @@ const Files: React.FC = () => {
   const renderFileItem = (item: FileItem, level: number = 0) => {
     const isExpanded = expandedFolders.has(item.path)
     const hasChildren = item.children && item.children.length > 0
+    const hasFiles = item.files && item.files.length > 0
     const isLoading = loadingChildren.has(item.id)
+    const isLoadingFiles = loadingFiles.has(item.id)
 
     return (
       <div key={item.id} className="select-none">
@@ -148,9 +187,21 @@ const Files: React.FC = () => {
           )}
         </div>
         
-        {item.is_directory && isExpanded && hasChildren && (
+        {item.is_directory && isExpanded && (
           <div>
-            {item.children!.map(child => renderFileItem(child, level + 1))}
+            {/* Show loading indicator for files */}
+            {isLoadingFiles && (
+              <div className="flex items-center py-1 px-2" style={{ paddingLeft: `${(level + 1) * 20 + 8}px` }}>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Loading files...</span>
+              </div>
+            )}
+            
+            {/* Show files */}
+            {hasFiles && item.files!.map(file => renderFileItem(file, level + 1))}
+            
+            {/* Show child directories */}
+            {hasChildren && item.children!.map(child => renderFileItem(child, level + 1))}
           </div>
         )}
       </div>

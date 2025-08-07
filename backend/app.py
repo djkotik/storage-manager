@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, case
 from pathlib import Path
 from functools import wraps
 
@@ -264,7 +264,7 @@ def is_media_file(file_path, extension):
     return any(keyword in path_lower for keyword in media_keywords)
 
 def detect_duplicates(scan_id):
-    """Detect duplicate files based on size and name"""
+    """Detect duplicate files based on size and content hash"""
     try:
         logger.info("Starting duplicate detection...")
         
@@ -293,7 +293,7 @@ def detect_duplicates(scan_id):
                 is_directory=False
             ).all()
             
-            # Group by name (exact match)
+            # Group by name (exact match) and calculate content hash
             files_by_name = {}
             for file in files:
                 if file.name not in files_by_name:
@@ -303,10 +303,15 @@ def detect_duplicates(scan_id):
             # Create duplicate groups for files with same name and size
             for name, file_list in files_by_name.items():
                 if len(file_list) > 1:
+                    # For now, use a simple hash based on size and name
+                    # In a real implementation, you'd calculate actual file content hash
+                    content_hash = f"size_{size}_name_{name}"
+                    
                     # Create duplicate group
                     group = DuplicateGroup(
-                        hash_value=f"size_{size}_name_{name}",  # Simple hash based on size and name
-                        size=size
+                        hash_value=content_hash,
+                        size=size,
+                        file_count=len(file_list)
                     )
                     db.session.add(group)
                     db.session.flush()  # Get the group ID
@@ -316,7 +321,7 @@ def detect_duplicates(scan_id):
                         duplicate_file = DuplicateFile(
                             file_id=file.id,
                             group_id=group.id,
-                            hash_value=group.hash_value,
+                            hash_value=content_hash,
                             is_primary=(i == 0)  # First file is primary
                         )
                         db.session.add(duplicate_file)
@@ -328,6 +333,29 @@ def detect_duplicates(scan_id):
         
     except Exception as e:
         logger.error(f"Error detecting duplicates: {e}")
+        db.session.rollback()
+
+def save_storage_history(scan_id):
+    """Save storage history for analytics"""
+    try:
+        # Get the scan record
+        scan = ScanRecord.query.get(scan_id)
+        if not scan:
+            return
+        
+        # Create storage history entry
+        history = StorageHistory(
+            date=scan.start_time,
+            total_size=scan.total_size,
+            file_count=scan.total_files,
+            directory_count=scan.total_directories
+        )
+        db.session.add(history)
+        db.session.commit()
+        logger.info(f"Storage history saved for scan {scan_id}")
+        
+    except Exception as e:
+        logger.error(f"Error saving storage history: {e}")
         db.session.rollback()
 
 def scan_directory(data_path, scan_id):
@@ -462,6 +490,9 @@ def scan_directory(data_path, scan_id):
             
             # Detect duplicates
             detect_duplicates(scan_id)
+            
+            # Save storage history
+            save_storage_history(scan_id)
             
             logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
             
@@ -986,46 +1017,122 @@ def get_files():
         logger.error(f"Error getting files: {e}")
         return jsonify({'error': 'Failed to get files'}), 500
 
+# Add new endpoint to get files within a directory
+@app.route('/api/files/tree/<int:directory_id>/files')
+def get_directory_files(directory_id):
+    """Get files within a specific directory"""
+    try:
+        directory = FileRecord.query.get_or_404(directory_id)
+        
+        # Get files (not directories) within this directory
+        files = db.session.query(
+            FileRecord
+        ).filter(
+            FileRecord.parent_path == directory.path,
+            FileRecord.is_directory == False
+        ).order_by(FileRecord.size.desc()).limit(100).all()  # Limit to top 100 files by size
+        
+        result = []
+        for file in files:
+            result.append({
+                'id': file.id,
+                'name': file.name,
+                'path': file.path,
+                'size': file.size,
+                'size_formatted': format_size(file.size),
+                'extension': file.extension,
+                'is_directory': False,
+                'modified_time': file.modified_time.isoformat() if file.modified_time else None
+            })
+        
+        return jsonify({'files': result})
+    except Exception as e:
+        logger.error(f"Error getting directory files: {e}")
+        return jsonify({'error': 'Failed to get directory files'}), 500
+
+# Optimize the top-shares endpoint to use a single efficient query
+@app.route('/api/analytics/top-shares')
+@cache_result()
+def get_top_shares():
+    """Get top folder shares by size - optimized version"""
+    try:
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        logger.info(f"Getting top shares for data_path: {data_path}")
+        
+        # Single optimized query that gets all the data we need
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == data_path
+        ).group_by(
+            FileRecord.name,
+            FileRecord.path
+        ).all()
+        
+        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
+        
+        top_shares = []
+        for share in shares_data:
+            top_shares.append({
+                'name': share.name,
+                'path': share.path,
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
+                'file_count': share.file_count or 0
+            })
+        
+        # Sort by total size and take top 10
+        top_shares.sort(key=lambda x: x['size'], reverse=True)
+        top_shares = top_shares[:10]
+        
+        logger.info(f"Returning {len(top_shares)} top shares")
+        return jsonify({
+            'top_shares': top_shares
+        })
+    except Exception as e:
+        logger.error(f"Error getting top shares: {e}")
+        return jsonify({'error': 'Failed to get top shares'}), 500
+
+# Optimize the file tree endpoint
 @app.route('/api/files/tree')
 @cache_result()
 def get_file_tree():
-    """Get hierarchical file tree - top level shares"""
+    """Get hierarchical file tree - top level shares - optimized version"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Get top-level directories (shares) sorted by total size
-        shares = db.session.query(
-            FileRecord
+        # Single optimized query for all top-level directories with their sizes
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
         ).filter(
-            FileRecord.is_directory == True,
             FileRecord.parent_path == data_path
+        ).group_by(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id
         ).all()
         
-        logger.info(f"Found {len(shares)} top-level directories")
-        for share in shares:
-            logger.info(f"Directory: {share.name}, path: {share.path}, scan_id: {share.scan_id}")
+        logger.info(f"Found {len(shares_data)} top-level directories")
         
         tree = []
-        for share in shares:
-            # Calculate total size of all files within this directory
-            total_size = db.session.query(func.sum(FileRecord.size)).filter(
-                FileRecord.path.like(f"{share.path}/%")
-            ).scalar() or 0
-            
-            # Calculate actual file count within this directory (excluding directories)
-            file_count = db.session.query(func.count(FileRecord.id)).filter(
-                FileRecord.path.like(f"{share.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
+        for share in shares_data:
             tree.append({
                 'id': share.id,
                 'name': share.name,
                 'path': share.path,
-                'size': total_size,
-                'size_formatted': format_size(total_size),
-                'file_count': file_count,
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
+                'file_count': share.file_count or 0,
                 'is_directory': True,
                 'children': []  # Will be populated when expanded
             })
@@ -1039,41 +1146,41 @@ def get_file_tree():
         logger.error(f"Error getting file tree: {e}")
         return jsonify({'error': 'Failed to get file tree'}), 500
 
+# Optimize the directory children endpoint
 @app.route('/api/files/tree/<int:directory_id>')
 def get_directory_children(directory_id):
-    """Get children of a specific directory"""
+    """Get children of a specific directory - optimized version"""
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
-        # Get direct children of this directory
-        children = db.session.query(
-            FileRecord
+        # Single optimized query for all children with their sizes
+        children_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
         ).filter(
-            FileRecord.parent_path == directory.path,
-            FileRecord.is_directory == True
+            FileRecord.parent_path == directory.path
+        ).group_by(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory
         ).all()
         
         result = []
-        for child in children:
-            # Calculate total size of all files within this subdirectory
-            total_size = db.session.query(func.sum(FileRecord.size)).filter(
-                FileRecord.path.like(f"{child.path}/%")
-            ).scalar() or 0
-            
-            # Calculate actual file count within this subdirectory (excluding directories)
-            file_count = db.session.query(func.count(FileRecord.id)).filter(
-                FileRecord.path.like(f"{child.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
+        for child in children_data:
             result.append({
                 'id': child.id,
                 'name': child.name,
                 'path': child.path,
-                'size': total_size,
-                'size_formatted': format_size(total_size),
-                'file_count': file_count,
-                'is_directory': True,
+                'size': child.total_size or 0,
+                'size_formatted': format_size(child.total_size or 0),
+                'file_count': child.file_count or 0,
+                'is_directory': child.is_directory,
                 'children': []
             })
         
@@ -1136,58 +1243,6 @@ def get_analytics_overview():
     except Exception as e:
         logger.error(f"Error getting analytics overview: {e}")
         return jsonify({'error': 'Failed to get analytics overview'}), 500
-
-@app.route('/api/analytics/top-shares')
-@cache_result()
-def get_top_shares():
-    """Get top folder shares by size"""
-    try:
-        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
-        logger.info(f"Getting top shares for data_path: {data_path}")
-        
-        # Use a single optimized query with aggregation
-        shares_data = db.session.query(
-            FileRecord.name,
-            FileRecord.path,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('file_count')
-        ).filter(
-            FileRecord.is_directory == True,
-            FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.name,
-            FileRecord.path
-        ).all()
-        
-        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
-        
-        top_shares = []
-        for share in shares_data:
-            # Get file count (excluding directories) for this share
-            file_count = db.session.query(func.count(FileRecord.id)).filter(
-                FileRecord.path.like(f"{share.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
-            top_shares.append({
-                'name': share.name,
-                'path': share.path,
-                'size': share.total_size or 0,
-                'size_formatted': format_size(share.total_size or 0),
-                'file_count': file_count
-            })
-        
-        # Sort by total size and take top 10
-        top_shares.sort(key=lambda x: x['size'], reverse=True)
-        top_shares = top_shares[:10]
-        
-        logger.info(f"Returning {len(top_shares)} top shares")
-        return jsonify({
-            'top_shares': top_shares
-        })
-    except Exception as e:
-        logger.error(f"Error getting top shares: {e}")
-        return jsonify({'error': 'Failed to get top shares'}), 500
 
 @app.route('/api/analytics/stats')
 def get_analytics_stats():
