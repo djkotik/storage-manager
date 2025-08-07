@@ -8,9 +8,11 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, desc, case
+from sqlalchemy.exc import OperationalError
 from pathlib import Path
 from functools import wraps
 import schedule
+import sqlite3
 
 # Add simple caching
 cache = {}
@@ -37,6 +39,37 @@ def cache_result(duration=CACHE_DURATION):
         return wrapper
     return decorator
 
+def retry_on_db_lock(max_retries=3, delay=1):
+    """Decorator to retry database operations on lock errors"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except OperationalError as e:
+                    if "database is locked" in str(e).lower():
+                        last_exception = e
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Database locked, retrying in {delay}s (attempt {attempt + 1}/{max_retries})")
+                            time.sleep(delay)
+                            # Try to force a connection refresh
+                            try:
+                                db.session.rollback()
+                            except:
+                                pass
+                        continue
+                    else:
+                        raise
+                except Exception as e:
+                    raise
+            # If we get here, all retries failed
+            logger.error(f"Database operation failed after {max_retries} retries: {last_exception}")
+            raise last_exception
+        return wrapper
+    return decorator
+
 # Configure logging - simplified for Docker
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +88,14 @@ app = Flask(__name__) # Removed static_folder and static_url_path
 # Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////app/data/storage_analyzer.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+    'connect_args': {
+        'timeout': 30,
+        'check_same_thread': False
+    }
+}
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 # Initialize extensions
@@ -70,10 +111,24 @@ def enable_wal_mode():
             conn.execute(db.text('PRAGMA synchronous=NORMAL'))
             conn.execute(db.text('PRAGMA cache_size=10000'))
             conn.execute(db.text('PRAGMA temp_store=MEMORY'))
+            conn.execute(db.text('PRAGMA busy_timeout=30000'))  # 30 second timeout
+            conn.execute(db.text('PRAGMA wal_autocheckpoint=1000'))  # Checkpoint every 1000 pages
             conn.commit()
-        logger.info("SQLite WAL mode enabled")
+        logger.info("SQLite WAL mode enabled with improved settings")
     except Exception as e:
         logger.warning(f"Could not enable WAL mode: {e}")
+
+def unlock_database():
+    """Attempt to unlock the database by forcing a checkpoint"""
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(db.text('PRAGMA wal_checkpoint(TRUNCATE)'))
+            conn.commit()
+        logger.info("Database checkpoint completed")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to unlock database: {e}")
+        return False
 
 # Define the path to the built frontend files
 FRONTEND_DIST_DIR = os.path.join(app.root_path, 'static') # This should be /app/static in Docker
@@ -1256,8 +1311,26 @@ def start_scan():
 def stop_scan():
     """Stop the current scan"""
     try:
-        scanner_state['scanning'] = False
-        return jsonify({'message': 'Scan stop requested'})
+        if scanner_state['scanning']:
+            scanner_state['scanning'] = False
+            scanner_state['error'] = 'Scan stopped by user'
+            logger.info("Scan stopped by user")
+            
+            # Also update the database to mark any running scans as stopped
+            try:
+                running_scans = ScanRecord.query.filter_by(status='running').all()
+                for scan in running_scans:
+                    scan.status = 'stopped'
+                    scan.end_time = datetime.now()
+                    scan.error_message = 'Scan stopped by user'
+                db.session.commit()
+                logger.info(f"Updated {len(running_scans)} running scans in database")
+            except Exception as db_error:
+                logger.error(f"Error updating database for stopped scan: {db_error}")
+            
+            return jsonify({'message': 'Scan stopped successfully'})
+        else:
+            return jsonify({'message': 'No scan running'})
     except Exception as e:
         logger.error(f"Error stopping scan: {e}")
         return jsonify({'error': 'Failed to stop scan'}), 500
@@ -1273,6 +1346,7 @@ def trigger_scheduled_scan():
         return jsonify({'error': 'Failed to trigger scheduled scan'}), 500
 
 @app.route('/api/scan/status')
+@retry_on_db_lock(max_retries=3, delay=2)
 def get_scan_status():
     """Get current scan status with estimated completion time and percentage"""
     try:
@@ -1332,9 +1406,13 @@ def get_scan_status():
         return jsonify(status_data)
     except Exception as e:
         logger.error(f"Error getting scan status: {e}")
+        # Try to unlock database if it's locked
+        if "database is locked" in str(e).lower():
+            unlock_database()
         return jsonify({'error': 'Failed to get scan status'}), 500
 
 @app.route('/api/scan/history')
+@retry_on_db_lock(max_retries=3, delay=2)
 def get_scan_history():
     """Get scan history with duration information"""
     try:
@@ -1472,6 +1550,7 @@ def get_directory_files(directory_id):
 # Optimize the top-shares endpoint to use pre-calculated totals with fallback
 @app.route('/api/analytics/top-shares')
 @cache_result()
+@retry_on_db_lock(max_retries=3, delay=2)
 def get_top_shares():
     """Get top folder shares by size - using pre-calculated totals with fallback"""
     try:
@@ -1768,6 +1847,7 @@ def delete_file_or_directory(file_id):
 
 @app.route('/api/analytics/overview')
 @cache_result()
+@retry_on_db_lock(max_retries=3, delay=2)
 def get_analytics_overview():
     """Get storage analytics overview"""
     try:
@@ -2181,6 +2261,7 @@ def restore_file(item_id):
         return jsonify({'error': 'Failed to restore file'}), 500
 
 @app.route('/api/duplicates')
+@retry_on_db_lock(max_retries=3, delay=2)
 def get_duplicates():
     """Get duplicate files grouped by hash"""
     try:
@@ -2244,6 +2325,9 @@ def get_duplicates():
         })
     except Exception as e:
         logger.error(f"Error getting duplicates: {e}")
+        # Try to unlock database if it's locked
+        if "database is locked" in str(e).lower():
+            unlock_database()
         return jsonify({'error': 'Failed to get duplicates'}), 500
 
 @app.route('/api/duplicates/<int:group_id>/delete/<int:file_id>', methods=['POST'])
@@ -2355,6 +2439,54 @@ def manual_calculate_totals():
     except Exception as e:
         logger.error(f"Error in manual_calculate_totals: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug/database/unlock', methods=['POST'])
+def unlock_database_endpoint():
+    """Manually unlock the database"""
+    try:
+        success = unlock_database()
+        if success:
+            return jsonify({'message': 'Database unlocked successfully'})
+        else:
+            return jsonify({'error': 'Failed to unlock database'}), 500
+    except Exception as e:
+        logger.error(f"Error unlocking database: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug/database/status')
+def get_database_status():
+    """Get database status and lock information"""
+    try:
+        with db.engine.connect() as conn:
+            # Check WAL mode
+            result = conn.execute(db.text('PRAGMA journal_mode')).fetchone()
+            journal_mode = result[0] if result else 'unknown'
+            
+            # Check busy timeout
+            result = conn.execute(db.text('PRAGMA busy_timeout')).fetchone()
+            busy_timeout = result[0] if result else 'unknown'
+            
+            # Check if database is accessible
+            result = conn.execute(db.text('SELECT COUNT(*) FROM sqlite_master')).fetchone()
+            table_count = result[0] if result else 0
+            
+            # Check for active scans
+            result = conn.execute(db.text('SELECT COUNT(*) FROM scans WHERE status = "running"')).fetchone()
+            active_scans = result[0] if result else 0
+            
+            return jsonify({
+                'journal_mode': journal_mode,
+                'busy_timeout': busy_timeout,
+                'table_count': table_count,
+                'active_scans': active_scans,
+                'database_accessible': True
+            })
+    except Exception as e:
+        logger.error(f"Error getting database status: {e}")
+        return jsonify({
+            'error': str(e),
+            'database_accessible': False
+        }), 500
 
 # Application startup
 if __name__ == '__main__':
