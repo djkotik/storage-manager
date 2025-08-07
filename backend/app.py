@@ -1059,38 +1059,32 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Get all top-level directories
-        top_level_dirs = db.session.query(
+        # Get all top-level directories with their immediate file counts and sizes
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == data_path
+        ).group_by(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id
-        ).filter(
-            FileRecord.is_directory == True,
-            FileRecord.parent_path == data_path
         ).all()
         
-        logger.info(f"Found {len(top_level_dirs)} top-level directories for top shares")
+        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
         
         top_shares = []
-        for dir_info in top_level_dirs:
-            # Calculate total size of all files within this directory tree
-            total_size = db.session.query(func.sum(FileRecord.size)).filter(
-                FileRecord.path.like(f"{dir_info.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
-            # Calculate file count within this directory tree
-            file_count = db.session.query(func.count(FileRecord.id)).filter(
-                FileRecord.path.like(f"{dir_info.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
+        for share in shares_data:
             top_shares.append({
-                'name': dir_info.name,
-                'path': dir_info.path,
-                'size': total_size,
-                'size_formatted': format_size(total_size),
-                'file_count': file_count
+                'name': share.name,
+                'path': share.path,
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
+                'file_count': share.file_count or 0
             })
         
         # Sort by total size and take top 10
@@ -1114,39 +1108,33 @@ def get_file_tree():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Get all top-level directories
-        top_level_dirs = db.session.query(
+        # Get all top-level directories with their immediate file counts and sizes
+        shares_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == data_path
+        ).group_by(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id
-        ).filter(
-            FileRecord.is_directory == True,
-            FileRecord.parent_path == data_path
         ).all()
         
-        logger.info(f"Found {len(top_level_dirs)} top-level directories")
+        logger.info(f"Found {len(shares_data)} top-level directories")
         
         tree = []
-        for dir_info in top_level_dirs:
-            # Calculate total size of all files within this directory tree
-            total_size = db.session.query(func.sum(FileRecord.size)).filter(
-                FileRecord.path.like(f"{dir_info.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
-            # Calculate file count within this directory tree
-            file_count = db.session.query(func.count(FileRecord.id)).filter(
-                FileRecord.path.like(f"{dir_info.path}/%"),
-                FileRecord.is_directory == False
-            ).scalar() or 0
-            
+        for share in shares_data:
             tree.append({
-                'id': dir_info.id,
-                'name': dir_info.name,
-                'path': dir_info.path,
-                'size': total_size,
-                'size_formatted': format_size(total_size),
-                'file_count': file_count,
+                'id': share.id,
+                'name': share.name,
+                'path': share.path,
+                'size': share.total_size or 0,
+                'size_formatted': format_size(share.total_size or 0),
+                'file_count': share.file_count or 0,
                 'is_directory': True,
                 'children': []  # Will be populated when expanded
             })
@@ -1167,8 +1155,21 @@ def get_directory_children(directory_id):
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
-        # Get all direct children (both files and directories)
-        children = db.session.query(
+        # Get all direct children (both files and directories) with their sizes
+        children_data = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory,
+            FileRecord.size,
+            FileRecord.extension,
+            FileRecord.modified_time,
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('total_count'),
+            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        ).filter(
+            FileRecord.parent_path == directory.path
+        ).group_by(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id,
@@ -1176,36 +1177,22 @@ def get_directory_children(directory_id):
             FileRecord.size,
             FileRecord.extension,
             FileRecord.modified_time
-        ).filter(
-            FileRecord.parent_path == directory.path
         ).all()
         
         result = []
-        for child in children:
+        for child in children_data:
             if child.is_directory:
-                # For directories, calculate total size and file count
-                total_size = db.session.query(func.sum(FileRecord.size)).filter(
-                    FileRecord.path.like(f"{child.path}/%"),
-                    FileRecord.is_directory == False
-                ).scalar() or 0
-                
-                file_count = db.session.query(func.count(FileRecord.id)).filter(
-                    FileRecord.path.like(f"{child.path}/%"),
-                    FileRecord.is_directory == False
-                ).scalar() or 0
-                
                 result.append({
                     'id': child.id,
                     'name': child.name,
                     'path': child.path,
-                    'size': total_size,
-                    'size_formatted': format_size(total_size),
-                    'file_count': file_count,
+                    'size': child.total_size or 0,
+                    'size_formatted': format_size(child.total_size or 0),
+                    'file_count': child.file_count or 0,
                     'is_directory': True,
                     'children': []
                 })
             else:
-                # For files, use the file's own size
                 result.append({
                     'id': child.id,
                     'name': child.name,
@@ -1224,6 +1211,57 @@ def get_directory_children(directory_id):
     except Exception as e:
         logger.error(f"Error getting directory children: {e}")
         return jsonify({'error': 'Failed to get directory children'}), 500
+
+# Add delete endpoint for files and directories
+@app.route('/api/files/<int:file_id>/delete', methods=['POST'])
+def delete_file_or_directory(file_id):
+    """Delete a file or directory"""
+    try:
+        file_record = FileRecord.query.get_or_404(file_id)
+        
+        # Get the actual file path
+        file_path = file_record.path
+        
+        # Check if file/directory exists
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File or directory does not exist'}), 404
+        
+        # Move to trash instead of permanent deletion
+        trash_dir = '/app/data/trash'
+        os.makedirs(trash_dir, exist_ok=True)
+        
+        # Create unique trash path
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = os.path.basename(file_path)
+        trash_path = os.path.join(trash_dir, f"{timestamp}_{filename}")
+        
+        try:
+            # Move file/directory to trash
+            import shutil
+            shutil.move(file_path, trash_path)
+            
+            # Add to trash bin database
+            trash_item = TrashBin(
+                original_path=file_path,
+                original_size=file_record.size,
+                expires_at=datetime.now() + timedelta(days=30)  # Keep for 30 days
+            )
+            db.session.add(trash_item)
+            
+            # Remove from files database
+            db.session.delete(file_record)
+            db.session.commit()
+            
+            logger.info(f"Deleted {file_path} -> {trash_path}")
+            return jsonify({'message': f'Successfully deleted {filename}'})
+            
+        except Exception as e:
+            logger.error(f"Error deleting {file_path}: {e}")
+            return jsonify({'error': f'Failed to delete {filename}'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in delete_file_or_directory: {e}")
+        return jsonify({'error': 'Failed to delete file or directory'}), 500
 
 @app.route('/api/analytics/overview')
 @cache_result()

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown, Folder, File, HardDrive } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, File, HardDrive, Trash2 } from 'lucide-react'
 import axios from 'axios'
 
 interface FileItem {
@@ -26,6 +26,8 @@ const Files: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
   const [loadingChildren, setLoadingChildren] = useState<Set<number>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     fetchFileTree()
@@ -88,6 +90,43 @@ const Files: React.FC = () => {
       }
     }
     setExpandedFolders(newExpanded)
+  }
+
+  const handleDelete = async () => {
+    if (!selectedFile) return
+    
+    try {
+      setDeleting(true)
+      await axios.post(`/api/files/${selectedFile.id}/delete`)
+      
+      // Remove the deleted item from the tree
+      setFileTree(prevTree => {
+        const removeFromTree = (items: FileItem[]): FileItem[] => {
+          return items.filter(item => {
+            if (item.id === selectedFile.id) {
+              return false
+            }
+            if (item.children) {
+              item.children = removeFromTree(item.children)
+            }
+            return true
+          })
+        }
+        return removeFromTree(prevTree)
+      })
+      
+      setSelectedFile(null)
+      setShowDeleteConfirm(false)
+      
+      // Show success message
+      alert(`Successfully deleted ${selectedFile.name}`)
+      
+    } catch (error) {
+      console.error('Error deleting file:', error)
+      alert('Failed to delete file. Please try again.')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const renderFileItem = (item: FileItem, level: number = 0) => {
@@ -276,6 +315,18 @@ const Files: React.FC = () => {
                     </p>
                   </div>
                 )}
+                
+                {/* Delete Button */}
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={deleting}
+                    className="btn btn-danger w-full flex items-center justify-center"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="text-center py-8">
@@ -288,6 +339,36 @@ const Files: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && selectedFile && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Confirm Delete
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Are you sure you want to delete "{selectedFile.name}"? This action cannot be undone.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="btn btn-secondary flex-1"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="btn btn-danger flex-1"
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
