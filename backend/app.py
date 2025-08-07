@@ -423,16 +423,18 @@ with app.app_context():
         logger.warning(f"Could not create indexes: {e}")
     
     # Initialize default settings if they don't exist
-    if not get_setting('scan_time'):
-        set_setting('scan_time', '01:00')
-    if not get_setting('max_scan_duration'):
-        set_setting('max_scan_duration', '6')
-    if not get_setting('theme'):
-        set_setting('theme', 'unraid')
-    if not get_setting('themes'):
-        set_setting('themes', 'unraid,plex,light,dark')
-    if not get_setting('max_items_per_folder'):
-        set_setting('max_items_per_folder', '100')
+    default_settings = {
+        'scan_time': '01:00',
+        'max_scan_duration': '6',
+        'theme': 'unraid',
+        'themes': 'unraid,plex,light,dark',
+        'max_items_per_folder': '100',
+        'max_shares_to_scan': '0'  # 0 = unlimited
+    }
+    
+    for key, value in default_settings.items():
+        if not get_setting(key):
+            set_setting(key, value)
 
 # Add database indexes for better performance
 def create_indexes():
@@ -1235,6 +1237,8 @@ def get_settings():
         'data_path': get_setting('data_path', os.environ.get('DATA_PATH', '/data')),
         'scan_time': get_setting('scan_time', '01:00'),
         'max_scan_duration': int(get_setting('max_scan_duration', '6')),
+        'max_items_per_folder': int(get_setting('max_items_per_folder', '100')),
+        'max_shares_to_scan': int(get_setting('max_shares_to_scan', '0')),
         'theme': get_setting('theme', 'unraid'),
         'themes': ['unraid', 'plex', 'dark', 'light']
     })
@@ -1247,7 +1251,7 @@ def update_settings():
         
         # Update settings in database
         for key, value in data.items():
-            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme', 'max_items_per_folder']:
+            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme', 'max_items_per_folder', 'max_shares_to_scan']:
                 set_setting(key, str(value))
         
         # If scan_time was updated, reconfigure the scheduled scan
@@ -1261,6 +1265,7 @@ def update_settings():
         return jsonify({'error': 'Failed to update settings'}), 500
 
 @app.route('/api/database/reset', methods=['POST'])
+@retry_on_db_lock(max_retries=3, delay=2)
 def reset_database():
     """Reset the database - use with caution!"""
     try:
@@ -1270,6 +1275,9 @@ def reset_database():
         if scanner_state['scanning']:
             scanner_state['scanning'] = False
             logger.info("Stopped running scan before database reset")
+        
+        # Force unlock database first
+        unlock_database()
         
         # Drop all tables
         logger.info("Dropping all database tables...")
@@ -1287,18 +1295,31 @@ def reset_database():
         except Exception as e:
             logger.warning(f"Could not create indexes: {e}")
         
-        # Initialize default settings
+        # Initialize default settings with retry logic
         logger.info("Initializing default settings...")
-        if not get_setting('scan_time'):
-            set_setting('scan_time', '01:00')
-        if not get_setting('max_scan_duration'):
-            set_setting('max_scan_duration', '6')
-        if not get_setting('theme'):
-            set_setting('theme', 'unraid')
-        if not get_setting('themes'):
-            set_setting('themes', 'unraid,plex,light,dark')
-        if not get_setting('max_items_per_folder'):
-            set_setting('max_items_per_folder', '100')
+        default_settings = {
+            'scan_time': '01:00',
+            'max_scan_duration': '6',
+            'theme': 'unraid',
+            'themes': 'unraid,plex,light,dark',
+            'max_items_per_folder': '100',
+            'max_shares_to_scan': '0'  # 0 = unlimited
+        }
+        
+        for key, value in default_settings.items():
+            try:
+                if not get_setting(key):
+                    set_setting(key, value)
+                    logger.info(f"Set default setting: {key} = {value}")
+            except Exception as e:
+                logger.warning(f"Failed to set default setting {key}: {e}")
+                # Try again after a brief delay
+                try:
+                    time.sleep(0.1)
+                    set_setting(key, value)
+                    logger.info(f"Set default setting on retry: {key} = {value}")
+                except Exception as retry_e:
+                    logger.error(f"Failed to set default setting {key} even on retry: {retry_e}")
         
         # Clear cache
         global cache

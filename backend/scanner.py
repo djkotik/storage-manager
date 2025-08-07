@@ -138,6 +138,10 @@ class FileScanner:
             total_directories = 0
             total_size = 0
             
+            # Get max shares to scan setting
+            max_shares_to_scan = int(get_setting('max_shares_to_scan', '0'))
+            shares_scanned = 0
+            
             # Clear old file records for this scan
             FileRecord.query.filter_by(scan_id=self.current_scan.id).delete()
             
@@ -150,6 +154,17 @@ class FileScanner:
                 if time.time() - self.scan_start_time > self.max_duration:
                     logger.warning("Scan stopped due to max duration limit")
                     break
+                
+                # Check if we've reached max shares limit (only check at top-level directories)
+                if max_shares_to_scan > 0:
+                    # Check if this is a top-level directory (direct child of data_path)
+                    if Path(root).parent == Path(self.data_path):
+                        shares_scanned += 1
+                        logger.info(f"Scanning share {shares_scanned}/{max_shares_to_scan}: {Path(root).name}")
+                        
+                        if shares_scanned >= max_shares_to_scan:
+                            logger.info(f"Reached max shares limit ({max_shares_to_scan}), stopping scan")
+                            break
                 
                 # Process directories
                 for dir_name in dirs:
