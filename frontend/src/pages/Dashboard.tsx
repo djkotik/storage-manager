@@ -15,6 +15,10 @@ interface ScanStatus {
   total_size_formatted?: string
   current_path?: string
   error?: string
+  estimated_completion?: string
+  percentage_complete?: number
+  elapsed_time?: string
+  estimated_duration?: string
 }
 
 interface AnalyticsOverview {
@@ -202,12 +206,35 @@ const Dashboard: React.FC = () => {
                     Current: {scanStatus.current_path}
                   </p>
                 )}
+                {scanStatus.elapsed_time && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Elapsed: {scanStatus.elapsed_time}
+                  </p>
+                )}
+                {scanStatus.estimated_completion && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Estimated completion: {new Date(scanStatus.estimated_completion).toLocaleString()}
+                  </p>
+                )}
               </div>
             </div>
             <div className="text-right">
               <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
                 {scanStatus.total_size_formatted}
               </p>
+              {scanStatus.percentage_complete !== undefined && (
+                <div className="mt-2">
+                  <div className="w-32 bg-blue-200 rounded-full h-2 dark:bg-blue-700">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${scanStatus.percentage_complete}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    {scanStatus.percentage_complete}% complete
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1162,9 +1162,9 @@ def trigger_scheduled_scan():
 
 @app.route('/api/scan/status')
 def get_scan_status():
-    """Get current scan status"""
+    """Get current scan status with estimated completion time and percentage"""
     try:
-        return jsonify({
+        status_data = {
             'status': 'scanning' if scanner_state['scanning'] else 'idle',
             'scanning': scanner_state['scanning'],
             'scan_id': scanner_state['current_scan_id'],
@@ -1175,14 +1175,54 @@ def get_scan_status():
             'total_size_formatted': format_size(scanner_state['total_size']),
             'current_path': scanner_state['current_path'],
             'error': scanner_state['error']
-        })
+        }
+        
+        # Calculate estimated completion time and percentage if scan is running
+        if scanner_state['scanning'] and scanner_state['start_time']:
+            # Get average scan duration from last 5 completed scans
+            recent_scans = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'completed',
+                ScanRecord.end_time.isnot(None)
+            ).order_by(desc(ScanRecord.end_time)).limit(5).all()
+            
+            if recent_scans:
+                # Calculate average duration
+                total_duration = timedelta()
+                for scan in recent_scans:
+                    if scan.end_time and scan.start_time:
+                        total_duration += scan.end_time - scan.start_time
+                
+                avg_duration = total_duration / len(recent_scans)
+                elapsed_time = datetime.now() - scanner_state['start_time']
+                
+                # Estimate completion time
+                estimated_completion = scanner_state['start_time'] + avg_duration
+                status_data['estimated_completion'] = estimated_completion.isoformat()
+                
+                # Calculate percentage complete (based on time elapsed vs average duration)
+                if avg_duration.total_seconds() > 0:
+                    percentage_complete = min(95, (elapsed_time.total_seconds() / avg_duration.total_seconds()) * 100)
+                    status_data['percentage_complete'] = round(percentage_complete, 1)
+                else:
+                    status_data['percentage_complete'] = 0
+                
+                status_data['elapsed_time'] = str(elapsed_time).split('.')[0]  # Remove microseconds
+                status_data['estimated_duration'] = str(avg_duration).split('.')[0]  # Remove microseconds
+            else:
+                # No previous scans to base estimate on
+                status_data['estimated_completion'] = None
+                status_data['percentage_complete'] = 0
+                status_data['elapsed_time'] = None
+                status_data['estimated_duration'] = None
+        
+        return jsonify(status_data)
     except Exception as e:
         logger.error(f"Error getting scan status: {e}")
         return jsonify({'error': 'Failed to get scan status'}), 500
 
 @app.route('/api/scan/history')
 def get_scan_history():
-    """Get scan history"""
+    """Get scan history with duration information"""
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
@@ -1191,8 +1231,9 @@ def get_scan_history():
             page=page, per_page=per_page, error_out=False
         )
         
-        return jsonify({
-            'scans': [{
+        scan_list = []
+        for scan in scans.items:
+            scan_data = {
                 'id': scan.id,
                 'start_time': scan.start_time.isoformat(),
                 'end_time': scan.end_time.isoformat() if scan.end_time else None,
@@ -1201,7 +1242,21 @@ def get_scan_history():
                 'total_directories': scan.total_directories,
                 'total_size': scan.total_size,
                 'error_message': scan.error_message
-            } for scan in scans.items],
+            }
+            
+            # Calculate duration for completed scans
+            if scan.end_time and scan.start_time:
+                duration = scan.end_time - scan.start_time
+                scan_data['duration'] = str(duration).split('.')[0]  # Remove microseconds
+                scan_data['duration_seconds'] = duration.total_seconds()
+            else:
+                scan_data['duration'] = None
+                scan_data['duration_seconds'] = None
+            
+            scan_list.append(scan_data)
+        
+        return jsonify({
+            'scans': scan_list,
             'total': scans.total,
             'pages': scans.pages,
             'current_page': scans.page
