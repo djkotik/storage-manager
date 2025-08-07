@@ -80,7 +80,8 @@ scanner_state = {
 def run_scheduled_scan():
     """Run a scheduled scan"""
     try:
-        logger.info("Starting scheduled scan...")
+        logger.info("=== SCHEDULED SCAN TRIGGERED ===")
+        logger.info(f"Triggered at: {datetime.now()}")
         
         # Check if a scan is already running
         if scanner_state['scanning']:
@@ -90,17 +91,35 @@ def run_scheduled_scan():
         # Get scan settings
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         max_duration = int(get_setting('max_scan_duration', '6'))
+        logger.info(f"Scan settings - Data path: {data_path}, Max duration: {max_duration} hours")
+        
+        # Create scan record
+        logger.info("Creating scheduled scan record...")
+        scan_record = ScanRecord(
+            start_time=datetime.now(),
+            status='running'
+        )
+        db.session.add(scan_record)
+        db.session.commit()
+        logger.info(f"Scheduled scan record created with ID: {scan_record.id}")
         
         # Start the scan
-        with app.app_context():
-            scan_id = scan_directory(data_path, None)
-            if scan_id:
-                logger.info(f"Scheduled scan started with ID: {scan_id}")
-            else:
-                logger.error("Failed to start scheduled scan")
+        logger.info("Starting scheduled scan in background thread...")
+        scan_thread = threading.Thread(
+            target=scan_directory,
+            args=(data_path, scan_record.id)
+        )
+        scan_thread.daemon = True
+        scan_thread.start()
+        logger.info(f"Scheduled scan thread started with ID: {scan_thread.ident}")
+        logger.info(f"=== SCHEDULED SCAN INITIATED ===")
+        logger.info(f"Scan ID: {scan_record.id}")
+        logger.info(f"Data path: {data_path}")
                 
     except Exception as e:
+        logger.error(f"=== SCHEDULED SCAN ERROR ===")
         logger.error(f"Error in scheduled scan: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
 
 def setup_scheduled_scan():
     """Setup the scheduled scan based on settings"""
@@ -433,7 +452,11 @@ def scan_directory(data_path, scan_id):
     # Create application context for database operations
     with app.app_context():
         try:
-            logger.info(f"Starting scan of {data_path}")
+            logger.info(f"=== SCAN STARTED ===")
+            logger.info(f"Scan ID: {scan_id}")
+            logger.info(f"Scanning directory: {data_path}")
+            logger.info(f"Start time: {datetime.now()}")
+            
             scanner_state['scanning'] = True
             scanner_state['current_scan_id'] = scan_id
             scanner_state['start_time'] = datetime.now()
@@ -443,10 +466,15 @@ def scan_directory(data_path, scan_id):
             scanner_state['error'] = None
             
             # Clear existing files for this scan
+            logger.info("Clearing existing files for this scan...")
             FileRecord.query.filter_by(scan_id=scan_id).delete()
+            db.session.commit()
+            logger.info("Existing files cleared")
             
+            logger.info("Starting file system traversal...")
             for root, dirs, files in os.walk(data_path):
                 if not scanner_state['scanning']:
+                    logger.info("Scan stopped by user request")
                     break
                     
                 scanner_state['current_path'] = root
@@ -491,62 +519,69 @@ def scan_directory(data_path, scan_id):
                             _, extension = os.path.splitext(file_name)
                             extension = extension.lower() if extension else None
                             
-                                                    # Create file record
-                        file_record = FileRecord(
-                            path=file_path,
-                            name=file_name,
-                            size=file_size,
-                            is_directory=False,
-                            parent_path=root,
-                            extension=extension,
-                            created_time=datetime.fromtimestamp(stat.st_ctime),
-                            modified_time=datetime.fromtimestamp(stat.st_mtime),
-                            accessed_time=datetime.fromtimestamp(stat.st_atime),
-                            permissions=oct(stat.st_mode)[-3:],
-                            scan_id=scan_id
-                        )
-                        db.session.add(file_record)
-                        db.session.flush()  # Get the file record ID
-                        
-                        # Check if this is a media file
-                        if is_media_file(file_path, extension):
-                            # Determine media type based on extension and path
-                            media_type = 'other'
-                            if extension and extension.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg']:
-                                media_type = 'image'
-                            elif extension and extension.lower() in ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp']:
-                                # Check if it's a TV show (has season/episode patterns)
-                                if any(keyword in file_path.lower() for keyword in ['season', 'episode', 's0', 'e0']):
-                                    media_type = 'tv_show'
-                                else:
-                                    media_type = 'movie'
-                            elif extension and extension.lower() in ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a']:
-                                media_type = 'music'
-                            
-                            # Create media file record
-                            media_record = MediaFile(
-                                file_id=file_record.id,
-                                media_type=media_type,
-                                title=file_name,
-                                file_format=extension
+                            # Create file record
+                            file_record = FileRecord(
+                                path=file_path,
+                                name=file_name,
+                                size=file_size,
+                                is_directory=False,
+                                parent_path=root,
+                                extension=extension,
+                                created_time=datetime.fromtimestamp(stat.st_ctime),
+                                modified_time=datetime.fromtimestamp(stat.st_mtime),
+                                accessed_time=datetime.fromtimestamp(stat.st_atime),
+                                permissions=oct(stat.st_mode)[-3:],
+                                scan_id=scan_id
                             )
-                            db.session.add(media_record)
-                        
-                        scanner_state['total_files'] += 1
-                        scanner_state['total_size'] += file_size
+                            db.session.add(file_record)
+                            db.session.flush()  # Get the file record ID
+                            
+                            # Check if this is a media file
+                            if is_media_file(file_path, extension):
+                                # Determine media type based on extension and path
+                                media_type = 'other'
+                                if extension and extension.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg']:
+                                    media_type = 'image'
+                                elif extension and extension.lower() in ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp']:
+                                    # Check if it's a TV show (has season/episode patterns)
+                                    if any(keyword in file_path.lower() for keyword in ['season', 'episode', 's0', 'e0']):
+                                        media_type = 'tv_show'
+                                    else:
+                                        media_type = 'movie'
+                                elif extension and extension.lower() in ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a']:
+                                    media_type = 'music'
+                                
+                                # Create media file record
+                                media_record = MediaFile(
+                                    file_id=file_record.id,
+                                    media_type=media_type,
+                                    title=file_name,
+                                    file_format=extension
+                                )
+                                db.session.add(media_record)
+                            
+                            scanner_state['total_files'] += 1
+                            scanner_state['total_size'] += file_size
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                         continue
                 
-                # Commit periodically
-                if scanner_state['total_files'] % 100 == 0:
+                # Commit periodically and log progress
+                if scanner_state['total_files'] % 1000 == 0:
                     db.session.commit()
-                    logger.info(f"Processed {scanner_state['total_files']} files, {scanner_state['total_directories']} directories")
+                    logger.info(f"=== SCAN PROGRESS ===")
+                    logger.info(f"Files processed: {scanner_state['total_files']:,}")
+                    logger.info(f"Directories processed: {scanner_state['total_directories']:,}")
+                    logger.info(f"Total size: {format_size(scanner_state['total_size'])}")
+                    logger.info(f"Current path: {root}")
+                    logger.info(f"Elapsed time: {datetime.now() - scanner_state['start_time']}")
             
             # Final commit
+            logger.info("Committing final batch...")
             db.session.commit()
             
             # Update scan record
+            logger.info("Updating scan record...")
             scan_record = ScanRecord.query.get(scan_id)
             if scan_record:
                 scan_record.end_time = datetime.now()
@@ -555,36 +590,57 @@ def scan_directory(data_path, scan_id):
                 scan_record.total_size = scanner_state['total_size']
                 scan_record.status = 'completed'
                 db.session.commit()
+                logger.info(f"Scan record updated: ID {scan_id}")
             
             # Detect duplicates
+            logger.info("Starting duplicate detection...")
             detect_duplicates(scan_id)
+            logger.info("Duplicate detection completed")
             
             # Save storage history
+            logger.info("Saving storage history...")
             save_storage_history(scan_id)
+            logger.info("Storage history saved")
             
             # Calculate directory totals for the top 3 levels
+            logger.info("Calculating directory totals...")
             calculate_directory_totals_during_scan(data_path, scan_id)
+            logger.info("Directory totals calculated")
             
-            logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
+            logger.info(f"=== SCAN COMPLETED ===")
+            logger.info(f"Scan ID: {scan_id}")
+            logger.info(f"Total files: {scanner_state['total_files']:,}")
+            logger.info(f"Total directories: {scanner_state['total_directories']:,}")
+            logger.info(f"Total size: {format_size(scanner_state['total_size'])}")
+            logger.info(f"End time: {datetime.now()}")
+            logger.info(f"Duration: {datetime.now() - scanner_state['start_time']}")
             
         except Exception as e:
-            logger.error(f"Error during scan: {e}")
+            logger.error(f"=== SCAN ERROR ===")
+            logger.error(f"Scan ID: {scan_id}")
+            logger.error(f"Error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
             scanner_state['error'] = str(e)
             
             # Rollback the session to clear any pending transaction
+            logger.error("Rolling back database session...")
             db.session.rollback()
             
             # Update scan record with error
+            logger.error("Updating scan record with error...")
             scan_record = ScanRecord.query.get(scan_id)
             if scan_record:
                 scan_record.end_time = datetime.now()
                 scan_record.status = 'failed'
                 scan_record.error_message = str(e)
                 db.session.commit()
+                logger.error(f"Scan record updated with error: ID {scan_id}")
         
         finally:
+            logger.info("Cleaning up scan state...")
             scanner_state['scanning'] = False
             scanner_state['current_path'] = ''
+            logger.info("Scan state cleaned up")
 
 def calculate_directory_totals(directory_path):
     """Calculate total size and file count for a directory tree efficiently"""
@@ -1041,32 +1097,47 @@ def reset_database():
 def start_scan():
     """Start a new scan"""
     try:
+        logger.info("=== MANUAL SCAN REQUEST ===")
+        logger.info(f"Request received at: {datetime.now()}")
+        
         if scanner_state['scanning']:
+            logger.warning("Scan already in progress, rejecting request")
             return jsonify({'error': 'Scan already in progress'}), 400
         
         # Create scan record
+        logger.info("Creating scan record...")
         scan_record = ScanRecord(
             start_time=datetime.now(),
             status='running'
         )
         db.session.add(scan_record)
         db.session.commit()
+        logger.info(f"Scan record created with ID: {scan_record.id}")
         
         # Start scan in background thread
         data_path = os.environ.get('DATA_PATH', '/data')
+        logger.info(f"Starting scan thread for data path: {data_path}")
         scan_thread = threading.Thread(
             target=scan_directory,
             args=(data_path, scan_record.id)
         )
         scan_thread.daemon = True
         scan_thread.start()
+        logger.info("Scan thread started successfully")
+        
+        logger.info(f"=== MANUAL SCAN INITIATED ===")
+        logger.info(f"Scan ID: {scan_record.id}")
+        logger.info(f"Data path: {data_path}")
+        logger.info(f"Thread ID: {scan_thread.ident}")
         
         return jsonify({
             'message': 'Scan started successfully',
             'scan_id': scan_record.id
         })
     except Exception as e:
+        logger.error(f"=== SCAN START ERROR ===")
         logger.error(f"Error starting scan: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         return jsonify({'error': 'Failed to start scan'}), 500
 
 @app.route('/api/scan/stop', methods=['POST'])
@@ -1784,22 +1855,89 @@ def get_trash_bin():
 
 @app.route('/api/logs')
 def get_logs():
-    """Get recent application logs"""
+    """Get recent application logs and scan information"""
     try:
         lines = request.args.get('lines', 50, type=int)
         
-        # Since we're using StreamHandler only, we can't read logs from a file
-        # Instead, return a message indicating logs are available via docker logs
-        logs = [{
+        # Get current scan status
+        current_scan = None
+        if scanner_state['scanning']:
+            current_scan = {
+                'status': 'scanning',
+                'scan_id': scanner_state['current_scan_id'],
+                'start_time': scanner_state['start_time'].isoformat() if scanner_state['start_time'] else None,
+                'total_files': scanner_state['total_files'],
+                'total_directories': scanner_state['total_directories'],
+                'total_size': scanner_state['total_size'],
+                'total_size_formatted': format_size(scanner_state['total_size']),
+                'current_path': scanner_state['current_path'],
+                'error': scanner_state['error']
+            }
+        
+        # Get recent scan history
+        recent_scans = db.session.query(ScanRecord).order_by(
+            desc(ScanRecord.start_time)
+        ).limit(5).all()
+        
+        scan_history = []
+        for scan in recent_scans:
+            scan_history.append({
+                'id': scan.id,
+                'start_time': scan.start_time.isoformat(),
+                'end_time': scan.end_time.isoformat() if scan.end_time else None,
+                'status': scan.status,
+                'total_files': scan.total_files,
+                'total_directories': scan.total_directories,
+                'total_size': scan.total_size,
+                'total_size_formatted': format_size(scan.total_size),
+                'error_message': scan.error_message
+            })
+        
+        # Create log entries from scan information
+        logs = []
+        
+        # Add current scan status
+        if current_scan:
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Current scan: ID {current_scan['scan_id']}, Files: {current_scan['total_files']}, Directories: {current_scan['total_directories']}, Size: {current_scan['total_size_formatted']}, Path: {current_scan['current_path']}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Current scan: ID {current_scan['scan_id']}, Files: {current_scan['total_files']}, Directories: {current_scan['total_directories']}, Size: {current_scan['total_size_formatted']}, Path: {current_scan['current_path']}"
+            })
+        else:
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': 'No scan currently running',
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - No scan currently running"
+            })
+        
+        # Add recent scan history
+        for scan in scan_history:
+            status_text = f"Scan {scan['id']} ({scan['status']}): {scan['total_files']} files, {scan['total_directories']} directories, {scan['total_size_formatted']}"
+            if scan['error_message']:
+                status_text += f" - Error: {scan['error_message']}"
+            
+            logs.append({
+                'timestamp': scan['start_time'][:19].replace('T', ' '),
+                'level': 'INFO' if scan['status'] == 'completed' else 'ERROR' if scan['status'] == 'failed' else 'WARNING',
+                'message': status_text,
+                'raw': f"{scan['start_time'][:19].replace('T', ' ')} - {'INFO' if scan['status'] == 'completed' else 'ERROR' if scan['status'] == 'failed' else 'WARNING'} - {status_text}"
+            })
+        
+        # Add application status
+        logs.append({
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'level': 'INFO',
-            'message': f'Application logs are available via "docker logs <container_name>". Requested {lines} lines.',
-            'raw': f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} - INFO - Application logs are available via "docker logs <container_name>". Requested {lines} lines.'
-        }]
+            'message': f'Application running. Recent scans: {len(scan_history)}. For detailed logs, use "docker logs <container_name>".',
+            'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Application running. Recent scans: {len(scan_history)}. For detailed logs, use \"docker logs <container_name>\"."
+        })
         
         return jsonify({
-            'logs': logs,
-            'total_lines': len(logs)
+            'logs': logs[:lines],
+            'total_lines': len(logs),
+            'current_scan': current_scan,
+            'recent_scans': scan_history
         })
     except Exception as e:
         logger.error(f"Error getting logs: {e}")
