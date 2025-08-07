@@ -178,6 +178,20 @@ class TrashBin(db.Model):
     expires_at = db.Column(db.DateTime)  # When the file will be permanently deleted
     restored = db.Column(db.Boolean, default=False)
 
+class DirectoryTotal(db.Model):
+    """Model for storing pre-calculated directory totals"""
+    __tablename__ = 'directory_totals'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    path = db.Column(db.String(2000), nullable=False, unique=True)
+    name = db.Column(db.String(500), nullable=False)
+    total_size = db.Column(db.Integer, default=0)  # Total size in bytes
+    file_count = db.Column(db.Integer, default=0)
+    directory_count = db.Column(db.Integer, default=0)
+    depth = db.Column(db.Integer, default=0)  # Directory depth from root
+    scan_id = db.Column(db.Integer)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 # Create database tables
 with app.app_context():
     db.create_all()
@@ -494,6 +508,9 @@ def scan_directory(data_path, scan_id):
             # Save storage history
             save_storage_history(scan_id)
             
+            # Calculate directory totals for the top 3 levels
+            calculate_directory_totals_during_scan(data_path, scan_id)
+            
             logger.info(f"Scan completed: {scanner_state['total_files']} files, {scanner_state['total_directories']} directories, {format_size(scanner_state['total_size'])}")
             
         except Exception as e:
@@ -534,6 +551,79 @@ def calculate_directory_totals(directory_path):
     except Exception as e:
         logger.error(f"Error calculating totals for {directory_path}: {e}")
         return {'total_size': 0, 'file_count': 0}
+
+def calculate_directory_totals_during_scan(data_path, scan_id, max_depth=3):
+    """Calculate and store directory totals for top levels during scan"""
+    try:
+        logger.info(f"Calculating directory totals for scan {scan_id}, max depth {max_depth}")
+        
+        # Get all directories from this scan
+        directories = db.session.query(
+            FileRecord.path,
+            FileRecord.name
+        ).filter(
+            FileRecord.scan_id == scan_id,
+            FileRecord.is_directory == True
+        ).all()
+        
+        # Calculate depth for each directory
+        for directory in directories:
+            path_parts = directory.path.replace(data_path, '').strip('/').split('/')
+            depth = len(path_parts)
+            
+            if depth <= max_depth:
+                # Calculate totals for this directory
+                totals = db.session.query(
+                    func.sum(FileRecord.size).label('total_size'),
+                    func.count(FileRecord.id).label('file_count'),
+                    func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('directory_count')
+                ).filter(
+                    FileRecord.path.like(f"{directory.path}/%"),
+                    FileRecord.scan_id == scan_id
+                ).first()
+                
+                # Store or update the totals
+                existing = DirectoryTotal.query.filter_by(path=directory.path).first()
+                if existing:
+                    existing.total_size = totals.total_size or 0
+                    existing.file_count = totals.file_count or 0
+                    existing.directory_count = totals.directory_count or 0
+                    existing.depth = depth
+                    existing.scan_id = scan_id
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    new_total = DirectoryTotal(
+                        path=directory.path,
+                        name=directory.name,
+                        total_size=totals.total_size or 0,
+                        file_count=totals.file_count or 0,
+                        directory_count=totals.directory_count or 0,
+                        depth=depth,
+                        scan_id=scan_id
+                    )
+                    db.session.add(new_total)
+        
+        db.session.commit()
+        logger.info(f"Directory totals calculated and stored for scan {scan_id}")
+        
+    except Exception as e:
+        logger.error(f"Error calculating directory totals: {e}")
+        db.session.rollback()
+
+def get_directory_total(path):
+    """Get pre-calculated directory totals"""
+    try:
+        total = DirectoryTotal.query.filter_by(path=path).first()
+        if total:
+            return {
+                'total_size': total.total_size,
+                'file_count': total.file_count,
+                'directory_count': total.directory_count
+            }
+        return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
+    except Exception as e:
+        logger.error(f"Error getting directory total for {path}: {e}")
+        return {'total_size': 0, 'file_count': 0, 'directory_count': 0}
 
 # Routes
 @app.route('/')
@@ -1070,41 +1160,36 @@ def get_directory_files(directory_id):
         logger.error(f"Error getting directory files: {e}")
         return jsonify({'error': 'Failed to get directory files'}), 500
 
-# Optimize the top-shares endpoint to use a single efficient query
+# Optimize the top-shares endpoint to use pre-calculated totals
 @app.route('/api/analytics/top-shares')
 @cache_result()
 def get_top_shares():
-    """Get top folder shares by size - optimized version"""
+    """Get top folder shares by size - using pre-calculated totals"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Get all top-level directories with their immediate file counts and sizes
-        shares_data = db.session.query(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('total_count'),
-            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        # Get pre-calculated totals for top-level directories
+        top_shares_data = db.session.query(
+            DirectoryTotal.path,
+            DirectoryTotal.name,
+            DirectoryTotal.total_size,
+            DirectoryTotal.file_count
         ).filter(
-            FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id
+            DirectoryTotal.path.like(f"{data_path}/%"),
+            DirectoryTotal.depth == 1  # Top-level only
         ).all()
         
-        logger.info(f"Found {len(shares_data)} top-level directories for top shares")
+        logger.info(f"Found {len(top_shares_data)} top-level directories with pre-calculated totals")
         
         top_shares = []
-        for share in shares_data:
+        for share in top_shares_data:
             top_shares.append({
                 'name': share.name,
                 'path': share.path,
-                'size': share.total_size or 0,
-                'size_formatted': format_size(share.total_size or 0),
-                'file_count': share.file_count or 0
+                'size': share.total_size,
+                'size_formatted': format_size(share.total_size),
+                'file_count': share.file_count
             })
         
         # Sort by total size and take top 10
@@ -1119,42 +1204,40 @@ def get_top_shares():
         logger.error(f"Error getting top shares: {e}")
         return jsonify({'error': 'Failed to get top shares'}), 500
 
-# Optimize the file tree endpoint
+# Optimize the file tree endpoint to use pre-calculated totals
 @app.route('/api/files/tree')
 @cache_result()
 def get_file_tree():
-    """Get hierarchical file tree - top level shares - optimized version"""
+    """Get hierarchical file tree - using pre-calculated totals"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Get all top-level directories with their immediate file counts and sizes
-        shares_data = db.session.query(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('total_count'),
-            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+        # Get pre-calculated totals for top-level directories
+        tree_data = db.session.query(
+            DirectoryTotal.path,
+            DirectoryTotal.name,
+            DirectoryTotal.total_size,
+            DirectoryTotal.file_count
         ).filter(
-            FileRecord.parent_path == data_path
-        ).group_by(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id
+            DirectoryTotal.path.like(f"{data_path}/%"),
+            DirectoryTotal.depth == 1  # Top-level only
         ).all()
         
-        logger.info(f"Found {len(shares_data)} top-level directories")
+        logger.info(f"Found {len(tree_data)} top-level directories with pre-calculated totals")
         
         tree = []
-        for share in shares_data:
+        for item in tree_data:
+            # Get the FileRecord ID for this directory
+            file_record = FileRecord.query.filter_by(path=item.path).first()
+            
             tree.append({
-                'id': share.id,
-                'name': share.name,
-                'path': share.path,
-                'size': share.total_size or 0,
-                'size_formatted': format_size(share.total_size or 0),
-                'file_count': share.file_count or 0,
+                'id': file_record.id if file_record else 0,
+                'name': item.name,
+                'path': item.path,
+                'size': item.total_size,
+                'size_formatted': format_size(item.total_size),
+                'file_count': item.file_count,
                 'is_directory': True,
                 'children': []  # Will be populated when expanded
             })
@@ -1168,28 +1251,15 @@ def get_file_tree():
         logger.error(f"Error getting file tree: {e}")
         return jsonify({'error': 'Failed to get file tree'}), 500
 
-# Optimize the directory children endpoint
+# Optimize the directory children endpoint to use pre-calculated totals when available
 @app.route('/api/files/tree/<int:directory_id>')
 def get_directory_children(directory_id):
-    """Get children of a specific directory - optimized version"""
+    """Get children of a specific directory - using pre-calculated totals when available"""
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
-        # Get all direct children (both files and directories) with their sizes
-        children_data = db.session.query(
-            FileRecord.name,
-            FileRecord.path,
-            FileRecord.id,
-            FileRecord.is_directory,
-            FileRecord.size,
-            FileRecord.extension,
-            FileRecord.modified_time,
-            func.sum(FileRecord.size).label('total_size'),
-            func.count(FileRecord.id).label('total_count'),
-            func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
-        ).filter(
-            FileRecord.parent_path == directory.path
-        ).group_by(
+        # Get all direct children (both files and directories)
+        children = db.session.query(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id,
@@ -1197,22 +1267,28 @@ def get_directory_children(directory_id):
             FileRecord.size,
             FileRecord.extension,
             FileRecord.modified_time
+        ).filter(
+            FileRecord.parent_path == directory.path
         ).all()
         
         result = []
-        for child in children_data:
+        for child in children:
             if child.is_directory:
+                # Check if we have pre-calculated totals for this directory
+                totals = get_directory_total(child.path)
+                
                 result.append({
                     'id': child.id,
                     'name': child.name,
                     'path': child.path,
-                    'size': child.total_size or 0,
-                    'size_formatted': format_size(child.total_size or 0),
-                    'file_count': child.file_count or 0,
+                    'size': totals['total_size'],
+                    'size_formatted': format_size(totals['total_size']),
+                    'file_count': totals['file_count'],
                     'is_directory': True,
                     'children': []
                 })
             else:
+                # For files, use the file's own size
                 result.append({
                     'id': child.id,
                     'name': child.name,
