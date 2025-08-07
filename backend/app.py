@@ -10,6 +10,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, desc, case
 from pathlib import Path
 from functools import wraps
+import schedule
 
 # Add simple caching
 cache = {}
@@ -74,6 +75,59 @@ scanner_state = {
     'current_path': '',
     'error': None
 }
+
+# Scheduled scan functionality
+def run_scheduled_scan():
+    """Run a scheduled scan"""
+    try:
+        logger.info("Starting scheduled scan...")
+        
+        # Check if a scan is already running
+        if scanner_state['scanning']:
+            logger.info("Scan already in progress, skipping scheduled scan")
+            return
+        
+        # Get scan settings
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        max_duration = int(get_setting('max_scan_duration', '6'))
+        
+        # Start the scan
+        with app.app_context():
+            scan_id = scan_directory(data_path, None)
+            if scan_id:
+                logger.info(f"Scheduled scan started with ID: {scan_id}")
+            else:
+                logger.error("Failed to start scheduled scan")
+                
+    except Exception as e:
+        logger.error(f"Error in scheduled scan: {e}")
+
+def setup_scheduled_scan():
+    """Setup the scheduled scan based on settings"""
+    try:
+        scan_time = get_setting('scan_time', '01:00')
+        logger.info(f"Setting up scheduled scan for {scan_time}")
+        
+        # Clear any existing schedule
+        schedule.clear()
+        
+        # Schedule the scan
+        schedule.every().day.at(scan_time).do(run_scheduled_scan)
+        
+        logger.info(f"Scheduled scan configured for {scan_time} daily")
+        
+    except Exception as e:
+        logger.error(f"Error setting up scheduled scan: {e}")
+
+def run_scheduler():
+    """Run the scheduler in a background thread"""
+    while True:
+        try:
+            schedule.run_pending()
+            time.sleep(60)  # Check every minute
+        except Exception as e:
+            logger.error(f"Error in scheduler: {e}")
+            time.sleep(60)  # Wait before retrying
 
 # Define models directly in app.py to avoid circular imports
 class FileRecord(db.Model):
@@ -956,8 +1010,13 @@ def update_settings():
         
         # Update settings in database
         for key, value in data.items():
-            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme']:
+            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme', 'max_items_per_folder']:
                 set_setting(key, str(value))
+        
+        # If scan_time was updated, reconfigure the scheduled scan
+        if 'scan_time' in data:
+            setup_scheduled_scan()
+            logger.info(f"Scheduled scan reconfigured for {data['scan_time']}")
         
         return jsonify({'message': 'Settings updated successfully'})
     except Exception as e:
@@ -1019,6 +1078,16 @@ def stop_scan():
     except Exception as e:
         logger.error(f"Error stopping scan: {e}")
         return jsonify({'error': 'Failed to stop scan'}), 500
+
+@app.route('/api/scan/scheduled', methods=['POST'])
+def trigger_scheduled_scan():
+    """Manually trigger a scheduled scan"""
+    try:
+        run_scheduled_scan()
+        return jsonify({'message': 'Scheduled scan triggered successfully'})
+    except Exception as e:
+        logger.error(f"Error triggering scheduled scan: {e}")
+        return jsonify({'error': 'Failed to trigger scheduled scan'}), 500
 
 @app.route('/api/scan/status')
 def get_scan_status():
@@ -1892,6 +1961,14 @@ if __name__ == '__main__':
                 set_setting('max_items_per_folder', '100')
             
             logger.info("Default settings initialized")
+            
+            # Setup and start scheduled scan
+            setup_scheduled_scan()
+            
+            # Start scheduler in background thread
+            scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+            scheduler_thread.start()
+            logger.info("Scheduled scan system started")
             
         except Exception as e:
             logger.error(f"Error during startup: {e}")
