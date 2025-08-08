@@ -21,6 +21,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.11-alpine
 
+# Add build argument to force rebuild of code layers
+ARG BUILD_DATE=unknown
+
 # Install system dependencies for media processing
 RUN apk add --no-cache \
     ffmpeg \
@@ -31,7 +34,7 @@ RUN apk add --no-cache \
 COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
 
-# Copy backend code
+# Copy backend code (this layer will be rebuilt when BUILD_DATE changes)
 COPY backend/ ./
 
 # Copy built frontend
