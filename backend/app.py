@@ -661,17 +661,10 @@ def scan_directory(data_path, scan_id):
             logger.info("Committing final batch...")
             db.session.commit()
             
-            # Update scan record
-            logger.info("Updating scan record...")
-            scan_record = ScanRecord.query.get(scan_id)
-            if scan_record:
-                scan_record.end_time = datetime.now()
-                scan_record.total_files = scanner_state['total_files']
-                scan_record.total_directories = scanner_state['total_directories']
-                scan_record.total_size = scanner_state['total_size']
-                scan_record.status = 'completed'
-                db.session.commit()
-                logger.info(f"Scan record updated: ID {scan_id}")
+            # Calculate comprehensive folder totals FIRST
+            logger.info("Calculating folder totals...")
+            calculate_folder_totals_during_scan(data_path, scan_id)
+            logger.info("Folder totals calculated")
             
             # Detect duplicates
             logger.info("Starting duplicate detection...")
@@ -683,10 +676,17 @@ def scan_directory(data_path, scan_id):
             save_storage_history(scan_id)
             logger.info("Storage history saved")
             
-            # Calculate comprehensive folder totals
-            logger.info("Calculating folder totals...")
-            calculate_folder_totals_during_scan(data_path, scan_id)
-            logger.info("Folder totals calculated")
+            # Update scan record LAST (after all processing is complete)
+            logger.info("Updating scan record...")
+            scan_record = ScanRecord.query.get(scan_id)
+            if scan_record:
+                scan_record.end_time = datetime.now()
+                scan_record.total_files = scanner_state['total_files']
+                scan_record.total_directories = scanner_state['total_directories']
+                scan_record.total_size = scanner_state['total_size']
+                scan_record.status = 'completed'
+                db.session.commit()
+                logger.info(f"Scan record updated: ID {scan_id}")
             
             logger.info(f"=== SCAN COMPLETED ===")
             logger.info(f"Scan ID: {scan_id}")
@@ -729,10 +729,13 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         logger.info(f"Calculating folder totals for scan {scan_id}")
         
         # Clear existing folder info for this scan
+        logger.info("Clearing existing folder info...")
         FolderInfo.query.filter_by(scan_id=scan_id).delete()
         db.session.commit()
+        logger.info("Existing folder info cleared")
         
         # Get all directories from this scan, ordered by path length (process parents first)
+        logger.info("Querying directories from database...")
         directories = db.session.query(
             FileRecord.path,
             FileRecord.name,
@@ -744,87 +747,102 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         
         logger.info(f"Found {len(directories)} directories to process")
         
+        if not directories:
+            logger.warning("No directories found for this scan")
+            return
+        
         # Create a dictionary to store folder info
         folder_info = {}
+        processed_count = 0
         
         # Process each directory
         for directory in directories:
-            path = directory.path
-            name = directory.name
-            parent_path = directory.parent_path
-            
-            # Calculate depth relative to data_path
-            relative_path = path.replace(data_path, '').strip('/')
-            depth = len(relative_path.split('/')) if relative_path else 0
-            
-            # Calculate direct children (files and directories directly in this folder)
-            direct_children = db.session.query(
-                func.count(FileRecord.id).label('direct_file_count'),
-                func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('direct_directory_count')
-            ).filter(
-                FileRecord.parent_path == path,
-                FileRecord.scan_id == scan_id
-            ).first()
-            
-            # Calculate total size of files directly in this folder
-            direct_size = db.session.query(
-                func.sum(FileRecord.size).label('direct_size')
-            ).filter(
-                FileRecord.parent_path == path,
-                FileRecord.is_directory == False,
-                FileRecord.scan_id == scan_id
-            ).scalar() or 0
-            
-            # Initialize totals
-            total_size = direct_size
-            total_file_count = direct_children.direct_file_count or 0
-            total_directory_count = direct_children.direct_directory_count or 0
-            
-            # Add totals from subdirectories (already calculated due to ordering by path length)
-            for subfolder_path, subfolder_info in folder_info.items():
-                if subfolder_path.startswith(path + '/') and subfolder_path != path:
-                    total_size += subfolder_info['total_size']
-                    total_file_count += subfolder_info['file_count']
-                    total_directory_count += subfolder_info['directory_count']
-            
-            # Store folder info
-            folder_info[path] = {
-                'name': name,
-                'parent_path': parent_path,
-                'total_size': total_size,
-                'file_count': total_file_count,
-                'directory_count': total_directory_count,
-                'direct_file_count': direct_children.direct_file_count or 0,
-                'direct_directory_count': direct_children.direct_directory_count or 0,
-                'depth': depth
-            }
-            
-            # Create database record
-            folder_record = FolderInfo(
-                path=path,
-                name=name,
-                parent_path=parent_path,
-                total_size=total_size,
-                file_count=total_file_count,
-                directory_count=total_directory_count,
-                direct_file_count=direct_children.direct_file_count or 0,
-                direct_directory_count=direct_children.direct_directory_count or 0,
-                depth=depth,
-                scan_id=scan_id
-            )
-            db.session.add(folder_record)
-            
-            # Commit in batches to avoid memory issues
-            if len(folder_info) % 100 == 0:
-                db.session.commit()
-                logger.info(f"Processed {len(folder_info)} folders")
+            try:
+                path = directory.path
+                name = directory.name
+                parent_path = directory.parent_path
+                
+                # Calculate depth relative to data_path
+                relative_path = path.replace(data_path, '').strip('/')
+                depth = len(relative_path.split('/')) if relative_path else 0
+                
+                # Calculate direct children (files and directories directly in this folder)
+                direct_children = db.session.query(
+                    func.count(FileRecord.id).label('direct_file_count'),
+                    func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('direct_directory_count')
+                ).filter(
+                    FileRecord.parent_path == path,
+                    FileRecord.scan_id == scan_id
+                ).first()
+                
+                # Calculate total size of files directly in this folder
+                direct_size = db.session.query(
+                    func.sum(FileRecord.size).label('direct_size')
+                ).filter(
+                    FileRecord.parent_path == path,
+                    FileRecord.is_directory == False,
+                    FileRecord.scan_id == scan_id
+                ).scalar() or 0
+                
+                # Initialize totals
+                total_size = direct_size
+                total_file_count = direct_children.direct_file_count or 0
+                total_directory_count = direct_children.direct_directory_count or 0
+                
+                # Add totals from subdirectories (already calculated due to ordering by path length)
+                for subfolder_path, subfolder_info in folder_info.items():
+                    if subfolder_path.startswith(path + '/') and subfolder_path != path:
+                        total_size += subfolder_info['total_size']
+                        total_file_count += subfolder_info['file_count']
+                        total_directory_count += subfolder_info['directory_count']
+                
+                # Store folder info
+                folder_info[path] = {
+                    'name': name,
+                    'parent_path': parent_path,
+                    'total_size': total_size,
+                    'file_count': total_file_count,
+                    'directory_count': total_directory_count,
+                    'direct_file_count': direct_children.direct_file_count or 0,
+                    'direct_directory_count': direct_children.direct_directory_count or 0,
+                    'depth': depth
+                }
+                
+                # Create database record
+                folder_record = FolderInfo(
+                    path=path,
+                    name=name,
+                    parent_path=parent_path,
+                    total_size=total_size,
+                    file_count=total_file_count,
+                    directory_count=total_directory_count,
+                    direct_file_count=direct_children.direct_file_count or 0,
+                    direct_directory_count=direct_children.direct_directory_count or 0,
+                    depth=depth,
+                    scan_id=scan_id
+                )
+                db.session.add(folder_record)
+                
+                processed_count += 1
+                
+                # Commit in batches to avoid memory issues
+                if processed_count % 100 == 0:
+                    db.session.commit()
+                    logger.info(f"Processed {processed_count}/{len(directories)} folders")
+                    
+            except Exception as e:
+                logger.error(f"Error processing directory {directory.path}: {e}")
+                continue
         
         # Final commit
+        logger.info("Committing final folder calculations...")
         db.session.commit()
         logger.info(f"Folder totals calculated and stored for scan {scan_id}: {len(folder_info)} folders")
         
     except Exception as e:
         logger.error(f"Error calculating folder totals: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {str(e)}")
         db.session.rollback()
         raise
 
