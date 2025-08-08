@@ -95,7 +95,7 @@ const Dashboard: React.FC = () => {
       
       // Fetch logs less frequently
       try {
-        const logsRes = await axios.get('/api/logs?lines=20', { timeout: 5000 })
+        const logsRes = await axios.get('/api/logs?lines=50', { timeout: 5000 })
         setLogs(logsRes.data.logs)
       } catch (error) {
         console.error('Error fetching logs:', error)
@@ -404,7 +404,7 @@ const Dashboard: React.FC = () => {
       <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Live Logs
+            Detailed System Logs
           </h3>
           <button
             onClick={fetchData}
@@ -413,17 +413,17 @@ const Dashboard: React.FC = () => {
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
-        <div className="bg-gray-900 text-green-400 p-3 rounded-md font-mono text-xs h-64 overflow-y-auto">
+        <div className="bg-gray-900 text-green-400 p-4 rounded-md font-mono text-xs h-80 overflow-y-auto">
           {logs.length > 0 ? (
             logs.map((log, index) => (
-              <div key={index} className="mb-1">
+              <div key={index} className="mb-2 leading-relaxed">
                 <span className={getLogLevelColor(log.level)}>
                   [{log.level}]
                 </span>
                 <span className="text-gray-400 ml-2">
                   {log.timestamp}
                 </span>
-                <span className="text-white ml-2">
+                <span className="text-white ml-2 break-words">
                   {log.message}
                 </span>
               </div>

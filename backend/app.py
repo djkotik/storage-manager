@@ -2261,17 +2261,55 @@ def get_logs():
                 'error_message': scan.error_message
             })
         
-        # Create log entries from scan information
+        # Create detailed log entries
         logs = []
         
-        # Add current scan status
+        # Add current scan status with more detail
         if current_scan:
             logs.append({
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'level': 'INFO',
-                'message': f"Current scan: ID {current_scan['scan_id']}, Files: {current_scan['total_files']}, Directories: {current_scan['total_directories']}, Size: {current_scan['total_size_formatted']}, Path: {current_scan['current_path']}",
-                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Current scan: ID {current_scan['scan_id']}, Files: {current_scan['total_files']}, Directories: {current_scan['total_directories']}, Size: {current_scan['total_size_formatted']}, Path: {current_scan['current_path']}"
+                'message': f"=== SCAN IN PROGRESS ===",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - === SCAN IN PROGRESS ==="
             })
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Scan ID: {current_scan['scan_id']}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Scan ID: {current_scan['scan_id']}"
+            })
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Files processed: {current_scan['total_files']:,}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Files processed: {current_scan['total_files']:,}"
+            })
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Directories processed: {current_scan['total_directories']:,}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Directories processed: {current_scan['total_directories']:,}"
+            })
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Total size: {current_scan['total_size_formatted']}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Total size: {current_scan['total_size_formatted']}"
+            })
+            if current_scan['current_path']:
+                logs.append({
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'level': 'INFO',
+                    'message': f"Current path: {current_scan['current_path']}",
+                    'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Current path: {current_scan['current_path']}"
+                })
+            if current_scan['error']:
+                logs.append({
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'level': 'ERROR',
+                    'message': f"Scan error: {current_scan['error']}",
+                    'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - ERROR - Scan error: {current_scan['error']}"
+                })
         else:
             logs.append({
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -2280,25 +2318,84 @@ def get_logs():
                 'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - No scan currently running"
             })
         
-        # Add recent scan history
-        for scan in scan_history:
-            status_text = f"Scan {scan['id']} ({scan['status']}): {scan['total_files']} files, {scan['total_directories']} directories, {scan['total_size_formatted']}"
-            if scan['error_message']:
-                status_text += f" - Error: {scan['error_message']}"
-            
+        # Add recent scan history with more detail
+        if scan_history:
             logs.append({
-                'timestamp': scan['start_time'][:19].replace('T', ' '),
-                'level': 'INFO' if scan['status'] == 'completed' else 'ERROR' if scan['status'] == 'failed' else 'WARNING',
-                'message': status_text,
-                'raw': f"{scan['start_time'][:19].replace('T', ' ')} - {'INFO' if scan['status'] == 'completed' else 'ERROR' if scan['status'] == 'failed' else 'WARNING'} - {status_text}"
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"=== RECENT SCAN HISTORY ===",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - === RECENT SCAN HISTORY ==="
+            })
+            
+            for scan in scan_history:
+                logs.append({
+                    'timestamp': scan['start_time'][:19].replace('T', ' '),
+                    'level': 'INFO' if scan['status'] == 'completed' else 'ERROR' if scan['status'] == 'failed' else 'WARNING',
+                    'message': f"Scan {scan['id']} - Status: {scan['status'].upper()}",
+                    'raw': f"{scan['start_time'][:19].replace('T', ' ')} - {'INFO' if scan['status'] == 'completed' else 'ERROR' if scan['status'] == 'failed' else 'WARNING'} - Scan {scan['id']} - Status: {scan['status'].upper()}"
+                })
+                logs.append({
+                    'timestamp': scan['start_time'][:19].replace('T', ' '),
+                    'level': 'INFO',
+                    'message': f"  Files: {scan['total_files']:,}, Directories: {scan['total_directories']:,}, Size: {scan['total_size_formatted']}",
+                    'raw': f"{scan['start_time'][:19].replace('T', ' ')} - INFO - Files: {scan['total_files']:,}, Directories: {scan['total_directories']:,}, Size: {scan['total_size_formatted']}"
+                })
+                if scan['error_message']:
+                    logs.append({
+                        'timestamp': scan['start_time'][:19].replace('T', ' '),
+                        'level': 'ERROR',
+                        'message': f"  Error: {scan['error_message']}",
+                        'raw': f"{scan['start_time'][:19].replace('T', ' ')} - ERROR - Error: {scan['error_message']}"
+                    })
+        
+        # Add database status
+        try:
+            folder_count = db.session.query(FolderInfo).count()
+            file_count = db.session.query(FileRecord).count()
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"=== DATABASE STATUS ===",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - === DATABASE STATUS ==="
+            })
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Files in database: {file_count:,}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Files in database: {file_count:,}"
+            })
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'INFO',
+                'message': f"Folders in database: {folder_count:,}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Folders in database: {folder_count:,}"
+            })
+        except Exception as e:
+            logs.append({
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'level': 'ERROR',
+                'message': f"Database status error: {e}",
+                'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - ERROR - Database status error: {e}"
             })
         
         # Add application status
         logs.append({
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'level': 'INFO',
-            'message': f'Application running. Recent scans: {len(scan_history)}. For detailed logs, use "docker logs <container_name>".',
-            'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Application running. Recent scans: {len(scan_history)}. For detailed logs, use \"docker logs <container_name>\"."
+            'message': f"=== APPLICATION STATUS ===",
+            'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - === APPLICATION STATUS ==="
+        })
+        logs.append({
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'level': 'INFO',
+            'message': f"Application running. Recent scans: {len(scan_history)}",
+            'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - Application running. Recent scans: {len(scan_history)}"
+        })
+        logs.append({
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'level': 'INFO',
+            'message': f"For detailed system logs, use: docker logs <container_name>",
+            'raw': f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - INFO - For detailed system logs, use: docker logs <container_name>"
         })
         
         return jsonify({
