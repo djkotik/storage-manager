@@ -551,12 +551,31 @@ def scan_directory(data_path, scan_id):
             batch_size = 100  # Commit every 100 files to reduce lock time
             current_batch = 0
             
+            # Respect max_shares_to_scan setting (0 = unlimited)
+            try:
+                max_shares_to_scan = int(get_setting('max_shares_to_scan', '0'))
+            except Exception:
+                max_shares_to_scan = 0
+            shares_scanned = 0
+            
             for root, dirs, files in os.walk(data_path):
                 if not scanner_state['scanning']:
                     logger.info("Scan stopped by user request")
                     break
                     
                 scanner_state['current_path'] = root
+                
+                # If limiting shares, detect when we enter a top-level share and enforce limit
+                if max_shares_to_scan > 0:
+                    try:
+                        if os.path.dirname(root.rstrip('/')) == data_path.rstrip('/') and root.rstrip('/') != data_path.rstrip('/'):
+                            shares_scanned += 1
+                            logger.info(f"Scanning share {shares_scanned}/{max_shares_to_scan}: {os.path.basename(root)}")
+                            if shares_scanned > max_shares_to_scan:
+                                logger.info(f"Reached max shares limit ({max_shares_to_scan}), stopping scan")
+                                break
+                    except Exception:
+                        pass
                 
                 # Process directories
                 for dir_name in dirs:
@@ -746,7 +765,7 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         db.session.commit()
         logger.info("Existing folder info cleared")
         
-        # Get all directories from this scan, ordered by path length (process parents first)
+        # Get all directories from this scan, ordered by path length (process children first so parents can aggregate)
         logger.info("Querying directories from database...")
         directories = db.session.query(
             FileRecord.path,
@@ -755,7 +774,7 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         ).filter(
             FileRecord.scan_id == scan_id,
             FileRecord.is_directory == True
-        ).order_by(db.func.length(FileRecord.path)).all()
+        ).order_by(db.func.length(FileRecord.path).desc()).all()
         
         logger.info(f"Found {len(directories)} directories to process")
         
@@ -780,8 +799,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                 
                 # Calculate direct children (files and directories directly in this folder)
                 direct_children = db.session.query(
-                    func.count(FileRecord.id).label('direct_file_count'),
-                    func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('direct_directory_count')
+                    func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('direct_file_count'),
+                    func.sum(case((FileRecord.is_directory == True, 1), else_=0)).label('direct_directory_count')
                 ).filter(
                     FileRecord.parent_path == path,
                     FileRecord.scan_id == scan_id
@@ -798,8 +817,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                 
                 # Initialize totals
                 total_size = direct_size
-                total_file_count = direct_children.direct_file_count or 0
-                total_directory_count = direct_children.direct_directory_count or 0
+                total_file_count = int(direct_children.direct_file_count or 0)
+                total_directory_count = int(direct_children.direct_directory_count or 0)
                 
                 # Add totals from subdirectories (already calculated due to ordering by path length)
                 for subfolder_path, subfolder_info in folder_info.items():
@@ -815,8 +834,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                     'total_size': total_size,
                     'file_count': total_file_count,
                     'directory_count': total_directory_count,
-                    'direct_file_count': direct_children.direct_file_count or 0,
-                    'direct_directory_count': direct_children.direct_directory_count or 0,
+                    'direct_file_count': int(direct_children.direct_file_count or 0),
+                    'direct_directory_count': int(direct_children.direct_directory_count or 0),
                     'depth': depth
                 }
                 
@@ -828,8 +847,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                     total_size=total_size,
                     file_count=total_file_count,
                     directory_count=total_directory_count,
-                    direct_file_count=direct_children.direct_file_count or 0,
-                    direct_directory_count=direct_children.direct_directory_count or 0,
+                    direct_file_count=int(direct_children.direct_file_count or 0),
+                    direct_directory_count=int(direct_children.direct_directory_count or 0),
                     depth=depth,
                     scan_id=scan_id
                 )
@@ -1437,6 +1456,14 @@ def trigger_scheduled_scan():
 def get_scan_status():
     """Get current scan status with estimated completion time and percentage"""
     try:
+        # Safety check: if in-memory state says scanning but DB shows no running scans, reset state
+        if scanner_state['scanning']:
+            running_scan = db.session.query(ScanRecord).filter(ScanRecord.status == 'running').first()
+            if not running_scan:
+                scanner_state['scanning'] = False
+                scanner_state['current_path'] = ''
+                logger.info("Scan status corrected: no running scans in DB; hiding banner")
+
         status_data = {
             'status': 'scanning' if scanner_state['scanning'] else 'idle',
             'scanning': scanner_state['scanning'],
