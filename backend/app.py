@@ -663,8 +663,15 @@ def scan_directory(data_path, scan_id):
             
             # Calculate comprehensive folder totals FIRST
             logger.info("Calculating folder totals...")
-            calculate_folder_totals_during_scan(data_path, scan_id)
-            logger.info("Folder totals calculated")
+            try:
+                calculate_folder_totals_during_scan(data_path, scan_id)
+                logger.info("Folder totals calculated successfully")
+            except Exception as e:
+                logger.error(f"Error calculating folder totals: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error details: {str(e)}")
+                # Continue with the scan even if folder totals fail
+                logger.warning("Continuing scan without folder totals...")
             
             # Detect duplicates
             logger.info("Starting duplicate detection...")
@@ -725,6 +732,11 @@ def scan_directory(data_path, scan_id):
 
 def calculate_folder_totals_during_scan(data_path, scan_id):
     """Calculate and store comprehensive folder information during scan"""
+    logger.info(f"=== FOLDER CALCULATION START ===")
+    logger.info(f"Data path: {data_path}")
+    logger.info(f"Scan ID: {scan_id}")
+    logger.info(f"Function called at: {datetime.now()}")
+    
     try:
         logger.info(f"Calculating folder totals for scan {scan_id}")
         
@@ -838,8 +850,10 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         logger.info("Committing final folder calculations...")
         db.session.commit()
         logger.info(f"Folder totals calculated and stored for scan {scan_id}: {len(folder_info)} folders")
+        logger.info(f"=== FOLDER CALCULATION COMPLETE ===")
         
     except Exception as e:
+        logger.error(f"=== FOLDER CALCULATION ERROR ===")
         logger.error(f"Error calculating folder totals: {e}")
         logger.error(f"Error type: {type(e).__name__}")
         logger.error(f"Error details: {str(e)}")
