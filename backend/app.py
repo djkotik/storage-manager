@@ -1556,7 +1556,14 @@ def get_files():
         sort_by = request.args.get('sort_by', 'name')
         sort_order = request.args.get('sort_order', 'asc')
         
+        # Restrict listing to the latest completed scan by default unless a scan_id is provided
+        latest_scan = db.session.query(ScanRecord).filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+
         query = FileRecord.query
+        if latest_scan:
+            query = query.filter(FileRecord.scan_id == latest_scan.id)
         
         # Apply filters
         if search:
@@ -1636,13 +1643,20 @@ def get_directory_files(directory_id):
 
 # Optimize the top-shares endpoint to use pre-calculated totals with fallback
 @app.route('/api/analytics/top-shares')
-@cache_result()
 @retry_on_db_lock(max_retries=3, delay=2)
 def get_top_shares():
     """Get top folder shares by size - using pre-calculated totals with fallback"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
+        
+        # Restrict results to the latest completed scan
+        latest_scan = db.session.query(ScanRecord).filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        if not latest_scan:
+            logger.info("No completed scans found. Returning empty top shares list.")
+            return jsonify({'top_shares': []})
         
         # First try to get pre-calculated totals
         top_shares_data = db.session.query(
@@ -1652,7 +1666,8 @@ def get_top_shares():
             FolderInfo.file_count
         ).filter(
             FolderInfo.path.like(f"{data_path}/%"),
-            FolderInfo.depth == 1  # Top-level only
+            FolderInfo.depth == 1,  # Top-level only
+            FolderInfo.scan_id == latest_scan.id
         ).order_by(FolderInfo.total_size.desc()).all()
         
         if top_shares_data:
@@ -1670,11 +1685,6 @@ def get_top_shares():
         else:
             # Fallback to old approach if no pre-calculated data
             logger.info("No pre-calculated totals found, using fallback approach")
-            
-            # Get the latest completed scan
-            latest_scan = db.session.query(ScanRecord).filter(
-                ScanRecord.status == 'completed'
-            ).order_by(ScanRecord.start_time.desc()).first()
             
             if latest_scan:
                 # Get distinct top-level directories from latest scan
@@ -1719,12 +1729,19 @@ def get_top_shares():
 
 # Optimize the file tree endpoint to use pre-calculated totals with fallback
 @app.route('/api/files/tree')
-@cache_result()
 def get_file_tree():
     """Get hierarchical file tree - using pre-calculated totals with fallback"""
     try:
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
+        
+        # Restrict results to the latest completed scan
+        latest_scan = db.session.query(ScanRecord).filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        if not latest_scan:
+            logger.info("No completed scans found. Returning empty tree.")
+            return jsonify({'tree': []})
         
         # First try to get pre-calculated totals
         tree_data = db.session.query(
@@ -1734,7 +1751,8 @@ def get_file_tree():
             FolderInfo.file_count
         ).filter(
             FolderInfo.path.like(f"{data_path}/%"),
-            FolderInfo.depth == 1  # Top-level only
+            FolderInfo.depth == 1,  # Top-level only
+            FolderInfo.scan_id == latest_scan.id
         ).order_by(FolderInfo.total_size.desc()).all()
         
         if tree_data:
@@ -1758,11 +1776,6 @@ def get_file_tree():
         else:
             # Fallback to old approach if no pre-calculated data
             logger.info("No pre-calculated totals found, using fallback approach")
-            
-            # Get the latest completed scan
-            latest_scan = db.session.query(ScanRecord).filter(
-                ScanRecord.status == 'completed'
-            ).order_by(ScanRecord.start_time.desc()).first()
             
             if latest_scan:
                 # Get distinct top-level directories from latest scan
@@ -1920,15 +1933,31 @@ def delete_file_or_directory(file_id):
         return jsonify({'error': 'Failed to delete file or directory'}), 500
 
 @app.route('/api/analytics/overview')
-@cache_result()
 @retry_on_db_lock(max_retries=3, delay=2)
 def get_analytics_overview():
     """Get storage analytics overview"""
     try:
-        # Get total stats
-        total_files = FileRecord.query.filter_by(is_directory=False).count()
-        total_directories = FileRecord.query.filter_by(is_directory=True).count()
-        total_size = db.session.query(func.sum(FileRecord.size)).scalar() or 0
+        # Always restrict to the latest completed scan
+        latest_scan = db.session.query(ScanRecord).filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        if not latest_scan:
+            return jsonify({
+                'total_files': 0,
+                'total_directories': 0,
+                'total_size': 0,
+                'total_size_formatted': format_size(0),
+                'top_extensions': [],
+                'media_files': 0,
+                'media_breakdown': {}
+            })
+
+        # Get total stats for the latest scan
+        total_files = FileRecord.query.filter_by(is_directory=False, scan_id=latest_scan.id).count()
+        total_directories = FileRecord.query.filter_by(is_directory=True, scan_id=latest_scan.id).count()
+        total_size = db.session.query(func.sum(FileRecord.size)).filter(
+            FileRecord.scan_id == latest_scan.id
+        ).scalar() or 0
         
         # Get top file types
         top_extensions = db.session.query(
@@ -1937,7 +1966,8 @@ def get_analytics_overview():
             func.sum(FileRecord.size).label('total_size')
         ).filter(
             FileRecord.extension.isnot(None),
-            FileRecord.is_directory == False
+            FileRecord.is_directory == False,
+            FileRecord.scan_id == latest_scan.id
         ).group_by(FileRecord.extension).order_by(
             desc(func.sum(FileRecord.size))
         ).limit(10).all()
@@ -1946,6 +1976,10 @@ def get_analytics_overview():
         media_counts = db.session.query(
             MediaFile.media_type,
             func.count(MediaFile.id).label('count')
+        ).join(
+            FileRecord, MediaFile.file_id == FileRecord.id, isouter=True
+        ).filter(
+            db.or_(MediaFile.file_id.is_(None), FileRecord.scan_id == latest_scan.id)
         ).group_by(MediaFile.media_type).all()
         
         media_breakdown = {}
@@ -2109,6 +2143,11 @@ def get_media_files():
         resolution = request.args.get('resolution', '')
         search = request.args.get('search', '')
         
+        # Restrict to latest completed scan's files when joining
+        latest_scan = db.session.query(ScanRecord).filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+
         query = MediaFile.query
         
         # Apply filters
@@ -2130,6 +2169,10 @@ def get_media_files():
         media_counts = db.session.query(
             MediaFile.media_type,
             func.count(MediaFile.id).label('count')
+        ).join(
+            FileRecord, MediaFile.file_id == FileRecord.id, isouter=True
+        ).filter(
+            db.or_(MediaFile.file_id.is_(None), FileRecord.scan_id == (latest_scan.id if latest_scan else None))
         ).group_by(MediaFile.media_type).all()
         
         counts = {}
@@ -2348,10 +2391,17 @@ def get_logs():
                         'raw': f"{scan['start_time'][:19].replace('T', ' ')} - ERROR - Error: {scan['error_message']}"
                     })
         
-        # Add database status
+        # Add database status (latest scan only)
         try:
-            folder_count = db.session.query(FolderInfo).count()
-            file_count = db.session.query(FileRecord).count()
+            latest_completed = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'completed'
+            ).order_by(ScanRecord.start_time.desc()).first()
+            if latest_completed:
+                folder_count = db.session.query(FolderInfo).filter(FolderInfo.scan_id == latest_completed.id).count()
+                file_count = db.session.query(FileRecord).filter(FileRecord.scan_id == latest_completed.id).count()
+            else:
+                folder_count = 0
+                file_count = 0
             logs.append({
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'level': 'INFO',
