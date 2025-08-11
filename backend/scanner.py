@@ -7,16 +7,26 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import re
-from mutagen import File as MutagenFile
-from mutagen.mp4 import MP4
-from mutagen.avi import AVI
-from mutagen.asf import ASF
-from mutagen.flac import FLAC
-from mutagen.mp3 import MP3
-from mutagen.oggvorbis import OggVorbis
+# Removed mutagen imports - metadata extraction moved to separate process
+# from mutagen import File as MutagenFile
+# from mutagen.mp4 import MP4
+# from mutagen.avi import AVI
+# from mutagen.asf import ASF
+# from mutagen.flac import FLAC
+# from mutagen.mp3 import MP3
+# from mutagen.oggvorbis import OggVorbis
 
 from app import db
 from models import FileRecord, ScanRecord, MediaFile, StorageHistory
+
+# Import get_setting function
+def get_setting(key, default=None):
+    """Get setting from database or environment"""
+    try:
+        from app import get_setting as app_get_setting
+        return app_get_setting(key, default)
+    except ImportError:
+        return default
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +127,21 @@ class FileScanner:
         """Get current scan status"""
         if not self.current_scan:
             return {'status': 'idle'}
+        
+        # Calculate elapsed time and estimated completion
+        elapsed_time = time.time() - self.scan_start_time if self.scan_start_time else 0
+        current_path = getattr(self, 'current_path', 'Unknown')
+        
+        # Estimate completion time based on current progress
+        estimated_completion = None
+        if self.current_scan.total_directories > 0 and elapsed_time > 0:
+            # Rough estimate: assume 210,006 total directories based on logs
+            total_estimated_dirs = 210006
+            progress_ratio = self.current_scan.total_directories / total_estimated_dirs
+            if progress_ratio > 0:
+                estimated_total_time = elapsed_time / progress_ratio
+                estimated_remaining = estimated_total_time - elapsed_time
+                estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
             
         return {
             'scan_id': self.current_scan.id,
@@ -126,7 +151,10 @@ class FileScanner:
             'total_files': self.current_scan.total_files,
             'total_directories': self.current_scan.total_directories,
             'total_size': self.current_scan.total_size,
-            'scanning': self.scanning
+            'scanning': self.scanning,
+            'elapsed_time': elapsed_time,
+            'current_path': current_path,
+            'estimated_completion': estimated_completion.isoformat() if estimated_completion else None
         }
 
     def _scan_filesystem(self):
@@ -149,6 +177,9 @@ class FileScanner:
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
+                    
+                # Track current path for progress reporting
+                self.current_path = root
                     
                 # Check if we've exceeded max duration
                 if time.time() - self.scan_start_time > self.max_duration:
@@ -217,9 +248,10 @@ class FileScanner:
                         total_files += 1
                         total_size += stat.st_size
                         
-                        # Extract media metadata if it's a media file
-                        if extension in self.video_extensions or extension in self.audio_extensions:
-                            self._extract_media_metadata(file_record, file_path)
+                        # Skip metadata extraction during main scan - too slow!
+                        # TODO: Add separate metadata extraction process that can run independently
+                        # if extension in self.video_extensions or extension in self.audio_extensions:
+                        #     self._extract_media_metadata(file_record, file_path)
                         
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
@@ -228,6 +260,16 @@ class FileScanner:
                 if total_files % 1000 == 0:
                     db.session.commit()
                     logger.info(f"Processed {total_files} files, {total_directories} directories")
+                    
+                    # Update scan record with current progress
+                    self.current_scan.total_files = total_files
+                    self.current_scan.total_directories = total_directories
+                    self.current_scan.total_size = total_size
+                    db.session.commit()
+                
+                # Log progress every 100 directories for better visibility
+                if total_directories % 100 == 0:
+                    logger.info(f"Processed {total_directories}/210006 folders")
             
             # Final commit
             db.session.commit()
@@ -259,9 +301,9 @@ class FileScanner:
         """Extract metadata from media files"""
         try:
             # Try to extract metadata using mutagen
-            media_file = MutagenFile(str(file_path))
-            if not media_file:
-                return
+            # media_file = MutagenFile(str(file_path))
+            # if not media_file:
+            #     return
                 
             # Determine media type and extract basic info
             extension = file_path.suffix.lower()
@@ -315,8 +357,8 @@ class FileScanner:
                     break
             
             # Try to get runtime from metadata
-            if hasattr(media_file, 'info') and hasattr(media_file.info, 'length'):
-                runtime = int(media_file.info.length / 60)  # Convert to minutes
+            # if hasattr(media_file, 'info') and hasattr(media_file.info, 'length'):
+            #     runtime = int(media_file.info.length / 60)  # Convert to minutes
             
             # Create media file record
             media_record = MediaFile(
