@@ -37,6 +37,9 @@ COPY --from=backend-builder /usr/local/bin /usr/local/bin
 # Copy backend code (this layer will be rebuilt when BUILD_DATE changes)
 COPY backend/ ./
 
+# Copy VERSION file for version endpoint
+COPY VERSION ./
+
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./static
 

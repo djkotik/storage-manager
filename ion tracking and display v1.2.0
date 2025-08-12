@@ -1,0 +1,10 @@
+[33m4112f46[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m Optimize scanner performance by removing metadata extraction during main scan - Fixes slow scan issue that was taking days to complete - Removed mutagen dependency from main scan process - Added real-time progress updates to scan record - Added better progress logging and status reporting - Metadata extraction can be added later as separate background process
+[33mdd4f0c9[m Fix scan banner persistence; enforce max_shares_to_scan in scan_directory; correct folder totals aggregation and counting; analytics already scoped to latest scan
+[33ma0b7941[m Scope analytics/tree and overview to latest completed scan; remove caching on those endpoints; update logs DB counts to latest scan
+[33me62733d[m Enhance Dashboard logs with detailed system information and improved display
+[33ma2ae229[m Add detailed logging to folder calculation function to debug why it's not being called
+[33mc1f9f2c[m Fix scan completion order and improve folder calculation logging
+[33m847a238[m Fix NameError by removing duplicate app.app_context() block and fixing function definitions order
+[33mf526dbe[m Fix NameError by removing duplicate app.app_context() block
+[33m7669cf7[m Fix NameError issues in app.py - Remove duplicate create_indexes function definition - Fix malformed code in initialization block - Add missing max_shares_to_scan setting initialization
+[33m65a9029[m Fix Reset Database method and add max_shares_to_scan setting - Add retry logic and error handling to reset database endpoint - Add max_shares_to_scan setting with default 0 (unlimited) - Update scanner to respect max_shares_to_scan setting - Add UI field for max_shares_to_scan in settings page - Update settings endpoints to handle new setting
