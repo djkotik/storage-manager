@@ -109,6 +109,18 @@ class FileScanner:
             logger.warning("Scan already in progress")
             return None
             
+        # Mark any existing running scans as failed
+        try:
+            running_scans = ScanRecord.query.filter_by(status='running').all()
+            for scan in running_scans:
+                scan.status = 'failed'
+                scan.error_message = 'Superseded by new scan'
+                scan.end_time = datetime.utcnow()
+            db.session.commit()
+            logger.info(f"Marked {len(running_scans)} existing running scans as failed")
+        except Exception as e:
+            logger.error(f"Error cleaning up old scans: {e}")
+            
         self.scanning = True
         self.stop_scan = False
         self.scan_start_time = time.time()

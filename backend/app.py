@@ -1717,12 +1717,19 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Restrict results to the latest completed scan
+        # First try to get the latest completed scan
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
+        
+        # If no completed scan, try to get the current running scan
         if not latest_scan:
-            logger.info("No completed scans found. Returning empty top shares list.")
+            latest_scan = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'running'
+            ).order_by(ScanRecord.start_time.desc()).first()
+            
+        if not latest_scan:
+            logger.info("No scans found. Returning empty top shares list.")
             return jsonify({'top_shares': []})
         
         # First try to get pre-calculated totals
@@ -2004,27 +2011,31 @@ def delete_file_or_directory(file_id):
 def get_analytics_overview():
     """Get storage analytics overview"""
     try:
-        # Always restrict to the latest completed scan
+        # First try to get the latest completed scan
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
+        
+        # If no completed scan, try to get the current running scan
+        if not latest_scan:
+            latest_scan = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'running'
+            ).order_by(ScanRecord.start_time.desc()).first()
+        
         if not latest_scan:
             return jsonify({
                 'total_files': 0,
                 'total_directories': 0,
                 'total_size': 0,
-                'total_size_formatted': format_size(0),
+                'total_size_formatted': '0 B',
                 'top_extensions': [],
-                'media_files': 0,
-                'media_breakdown': {}
+                'media_files': 0
             })
-
-        # Get total stats for the latest scan
-        total_files = FileRecord.query.filter_by(is_directory=False, scan_id=latest_scan.id).count()
-        total_directories = FileRecord.query.filter_by(is_directory=True, scan_id=latest_scan.id).count()
-        total_size = db.session.query(func.sum(FileRecord.size)).filter(
-            FileRecord.scan_id == latest_scan.id
-        ).scalar() or 0
+        
+        # Get total stats from the scan
+        total_files = latest_scan.total_files or 0
+        total_directories = latest_scan.total_directories or 0
+        total_size = latest_scan.total_size or 0
         
         # Get top file types
         top_extensions = db.session.query(
@@ -2039,21 +2050,10 @@ def get_analytics_overview():
             desc(func.sum(FileRecord.size))
         ).limit(10).all()
         
-        # Get media breakdown by type
-        media_counts = db.session.query(
-            MediaFile.media_type,
-            func.count(MediaFile.id).label('count')
-        ).join(
-            FileRecord, MediaFile.file_id == FileRecord.id, isouter=True
-        ).filter(
-            db.or_(MediaFile.file_id.is_(None), FileRecord.scan_id == latest_scan.id)
-        ).group_by(MediaFile.media_type).all()
-        
-        media_breakdown = {}
-        total_media = 0
-        for media_type, count in media_counts:
-            media_breakdown[media_type] = count
-            total_media += count
+        # Get media breakdown
+        media_files = MediaFile.query.join(FileRecord).filter(
+            FileRecord.scan_id == latest_scan.id
+        ).count()
         
         return jsonify({
             'total_files': total_files,
@@ -2066,8 +2066,7 @@ def get_analytics_overview():
                 'total_size': ext.total_size,
                 'total_size_formatted': format_size(ext.total_size)
             } for ext in top_extensions],
-            'media_files': total_media,
-            'media_breakdown': media_breakdown
+            'media_files': media_files
         })
     except Exception as e:
         logger.error(f"Error getting analytics overview: {e}")

@@ -59,13 +59,24 @@ const Analytics: React.FC = () => {
   const [scanHistory, setScanHistory] = useState<ScanHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
+  const [scanStatus, setScanStatus] = useState<any>(null)
 
   useEffect(() => {
     fetchData()
+    fetchScanStatus()
     // Add real-time updates when scan is running
     const interval = setInterval(fetchData, 5000) // Poll every 5 seconds
     return () => clearInterval(interval)
   }, [days])
+
+  const fetchScanStatus = async () => {
+    try {
+      const response = await axios.get('/api/scan/status')
+      setScanStatus(response.data)
+    } catch (error) {
+      console.error('Error fetching scan status:', error)
+    }
+  }
 
   const fetchData = async () => {
     setLoading(true)
@@ -109,12 +120,11 @@ const Analytics: React.FC = () => {
             Storage usage trends and statistics
           </p>
         </div>
-        
-        <div>
+        <div className="flex items-center space-x-4">
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
-            className="input"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
@@ -123,6 +133,23 @@ const Analytics: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {/* Scan Status Notification */}
+      {scanStatus?.scanning && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 dark:bg-blue-900/20 dark:border-blue-800">
+          <div className="flex items-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+            <div>
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                Scan in progress...
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Analytics data will be updated once the scan completes. Currently processing: {scanStatus.total_files?.toLocaleString() || 0} files
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Analytics Stats */}
       {stats && (
