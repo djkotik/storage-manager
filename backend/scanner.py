@@ -227,6 +227,20 @@ class FileScanner:
             last_heartbeat = time.time()
             heartbeat_interval = 30  # 30 seconds
             
+            # Add overall scan timeout protection
+            scan_start_time = time.time()
+            max_scan_time = self.max_duration * 3600  # Convert hours to seconds
+            
+            # Track directories processed for better progress reporting
+            directories_processed = 0
+            last_progress_log = time.time()
+            progress_log_interval = 60  # Log progress every minute
+            
+            # Track stuck detection
+            last_path_change = time.time()
+            stuck_timeout = 600  # 10 minutes without path change
+            last_path = None
+            
             for root, dirs, files in os.walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
@@ -242,25 +256,41 @@ class FileScanner:
                 # Track current path for progress reporting
                 self.current_path = root
                 
+                # Check for stuck detection
+                if last_path != root:
+                    last_path = root
+                    last_path_change = current_time
+                elif current_time - last_path_change > stuck_timeout:
+                    logger.error(f"Scan appears stuck: {root} has been processing for {stuck_timeout} seconds")
+                    raise Exception(f"Scan stuck in directory: {root}")
+                
                 # Check if we should skip appdata directory
                 skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
-                if skip_appdata and 'appdata' in root.lower():
+                if skip_appdata and ('appdata' in root.lower() or '/appdata' in root or '\\appdata' in root):
                     logger.info(f"Skipping appdata directory: {root}")
                     # Remove appdata from dirs to prevent os.walk from entering it
                     dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                    # Skip processing files in this directory too
+                    files = []
                     continue
                 
                 # Log current directory being processed with detailed info
                 logger.info(f"Processing directory: {root} (contains {len(dirs)} subdirs, {len(files)} files)")
                 
+                # Warn about very large directories that might cause delays
+                if len(files) > 10000:
+                    logger.warning(f"Large directory detected: {root} contains {len(files):,} files - this may take a while")
+                if len(dirs) > 1000:
+                    logger.warning(f"Deep directory structure detected: {root} contains {len(dirs):,} subdirectories - this may take a while")
+                
                 # Heartbeat log every 30 seconds
                 if current_time - last_heartbeat > heartbeat_interval:
-                    logger.info(f"Scan heartbeat: Still processing {root} (total: {total_files} files, {total_directories} dirs)")
+                    logger.info(f"Scan heartbeat: Still processing {root} (total: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)})")
                     last_heartbeat = current_time
                     
                 # Check if we've exceeded max duration
-                if time.time() - self.scan_start_time > self.max_duration:
-                    logger.warning("Scan stopped due to max duration limit")
+                if time.time() - scan_start_time > max_scan_time:
+                    logger.warning(f"Scan stopped due to max duration limit ({self.max_duration} hours)")
                     break
                 
                 # Check if we've reached max shares limit (only check at top-level directories)
@@ -335,9 +365,9 @@ class FileScanner:
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                 
-                # Update scan record more frequently (every 100 files or 5 seconds)
+                # Update scan record more frequently (every 50 files or 3 seconds)
                 current_time = time.time()
-                if (total_files % 100 == 0 or current_time - last_update_time > 5):
+                if (total_files % 50 == 0 or current_time - last_update_time > 3):
                     try:
                         db.session.commit()
                         
@@ -348,13 +378,26 @@ class FileScanner:
                         db.session.commit()
                         
                         last_update_time = current_time
-                        logger.info(f"Processed {total_files} files, {total_directories} directories, {format_size(total_size)}")
+                        logger.info(f"Processed {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
                     except Exception as e:
                         logger.error(f"Error updating scan progress: {e}")
+                        # Try to recover from database errors
+                        try:
+                            db.session.rollback()
+                        except:
+                            pass
                 
                 # Log progress every 100 directories for better visibility
                 if total_directories % 100 == 0:
-                    logger.info(f"Processed {total_directories}/210006 folders")
+                    logger.info(f"Processed {total_directories:,} directories so far")
+                
+                # Log detailed progress every minute
+                if current_time - last_progress_log > progress_log_interval:
+                    elapsed_time = current_time - self.scan_start_time
+                    rate_files = total_files / elapsed_time if elapsed_time > 0 else 0
+                    rate_dirs = total_directories / elapsed_time if elapsed_time > 0 else 0
+                    logger.info(f"Progress update: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)} in {elapsed_time:.0f}s ({rate_files:.1f} files/s, {rate_dirs:.1f} dirs/s)")
+                    last_progress_log = current_time
             
             # Final commit
             db.session.commit()

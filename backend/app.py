@@ -2053,7 +2053,7 @@ def get_analytics_overview():
         ).limit(10).all()
         
         # Get media breakdown
-        media_files = MediaFile.query.join(FileRecord).filter(
+        media_files = MediaFile.query.join(FileRecord, MediaFile.file_id == FileRecord.id).filter(
             FileRecord.scan_id == latest_scan.id
         ).count()
         
