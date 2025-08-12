@@ -18,8 +18,11 @@ interface ScanStatus {
   estimated_completion?: string
   percentage_complete?: number
   elapsed_time?: string
+  elapsed_time_formatted?: string
   estimated_duration?: string
   is_first_scan?: boolean
+  progress_percentage?: number
+  processing_rate?: string
 }
 
 interface AnalyticsOverview {
@@ -217,9 +220,14 @@ const Dashboard: React.FC = () => {
                     Current: {scanStatus.current_path}
                   </p>
                 )}
-                {scanStatus.elapsed_time && (
+                {scanStatus.elapsed_time_formatted && (
                   <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Elapsed: {scanStatus.elapsed_time}
+                    Elapsed: {scanStatus.elapsed_time_formatted}
+                  </p>
+                )}
+                {scanStatus.processing_rate && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Rate: {scanStatus.processing_rate}
                   </p>
                 )}
                 {scanStatus.estimated_completion && !scanStatus.is_first_scan && (
@@ -231,18 +239,18 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="text-right">
               <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                {scanStatus.total_size_formatted}
+                {scanStatus.total_size_formatted || '0 B'}
               </p>
-              {scanStatus.percentage_complete !== undefined && scanStatus.percentage_complete !== null && !scanStatus.is_first_scan && (
+              {scanStatus.progress_percentage !== undefined && scanStatus.progress_percentage !== null && (
                 <div className="mt-2">
                   <div className="w-32 bg-blue-200 rounded-full h-2 dark:bg-blue-700">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                      style={{ width: `${scanStatus.percentage_complete}%` }}
+                      style={{ width: `${scanStatus.progress_percentage}%` }}
                     ></div>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                    {scanStatus.percentage_complete}% complete
+                    {scanStatus.progress_percentage.toFixed(1)}% complete
                   </p>
                 </div>
               )}

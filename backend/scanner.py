@@ -30,6 +30,17 @@ def get_setting(key, default=None):
 
 logger = logging.getLogger(__name__)
 
+def format_size(size_bytes):
+    """Convert bytes to human readable format"""
+    if size_bytes == 0:
+        return "0 B"
+    size_names = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(size_names) - 1:
+        size_bytes /= 1024.0
+        i += 1
+    return f"{size_bytes:.1f} {size_names[i]}"
+
 class FileScanner:
     """Efficient file system scanner for unRAID storage analysis"""
     
@@ -132,14 +143,22 @@ class FileScanner:
         elapsed_time = time.time() - self.scan_start_time if self.scan_start_time else 0
         current_path = getattr(self, 'current_path', 'Unknown')
         
+        # Calculate processing rate
+        processing_rate = None
+        if elapsed_time > 0 and self.current_scan.total_files > 0:
+            files_per_second = self.current_scan.total_files / elapsed_time
+            processing_rate = f"{files_per_second:.1f} files/sec"
+        
         # Estimate completion time based on current progress
         estimated_completion = None
+        progress_percentage = 0
         if self.current_scan.total_directories > 0 and elapsed_time > 0:
             # Rough estimate: assume 210,006 total directories based on logs
             total_estimated_dirs = 210006
-            progress_ratio = self.current_scan.total_directories / total_estimated_dirs
-            if progress_ratio > 0:
-                estimated_total_time = elapsed_time / progress_ratio
+            progress_percentage = min(100, (self.current_scan.total_directories / total_estimated_dirs) * 100)
+            
+            if progress_percentage > 0:
+                estimated_total_time = elapsed_time / (progress_percentage / 100)
                 estimated_remaining = estimated_total_time - elapsed_time
                 estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
             
@@ -151,11 +170,27 @@ class FileScanner:
             'total_files': self.current_scan.total_files,
             'total_directories': self.current_scan.total_directories,
             'total_size': self.current_scan.total_size,
+            'total_size_formatted': format_size(self.current_scan.total_size),
             'scanning': self.scanning,
             'elapsed_time': elapsed_time,
+            'elapsed_time_formatted': self._format_duration(elapsed_time),
             'current_path': current_path,
-            'estimated_completion': estimated_completion.isoformat() if estimated_completion else None
+            'estimated_completion': estimated_completion.isoformat() if estimated_completion else None,
+            'progress_percentage': progress_percentage,
+            'processing_rate': processing_rate
         }
+    
+    def _format_duration(self, seconds: float) -> str:
+        """Format duration in seconds to human readable format"""
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        elif seconds < 3600:
+            minutes = seconds / 60
+            return f"{minutes:.0f}m {seconds % 60:.0f}s"
+        else:
+            hours = seconds / 3600
+            minutes = (seconds % 3600) / 60
+            return f"{hours:.0f}h {minutes:.0f}m"
 
     def _scan_filesystem(self):
         """Main scanning method"""
@@ -165,6 +200,7 @@ class FileScanner:
             total_files = 0
             total_directories = 0
             total_size = 0
+            last_update_time = time.time()
             
             # Get max shares to scan setting
             max_shares_to_scan = int(get_setting('max_shares_to_scan', '0'))
@@ -256,16 +292,22 @@ class FileScanner:
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                 
-                # Commit in batches
-                if total_files % 1000 == 0:
-                    db.session.commit()
-                    logger.info(f"Processed {total_files} files, {total_directories} directories")
-                    
-                    # Update scan record with current progress
-                    self.current_scan.total_files = total_files
-                    self.current_scan.total_directories = total_directories
-                    self.current_scan.total_size = total_size
-                    db.session.commit()
+                # Update scan record more frequently (every 100 files or 5 seconds)
+                current_time = time.time()
+                if (total_files % 100 == 0 or current_time - last_update_time > 5):
+                    try:
+                        db.session.commit()
+                        
+                        # Update scan record with current progress
+                        self.current_scan.total_files = total_files
+                        self.current_scan.total_directories = total_directories
+                        self.current_scan.total_size = total_size
+                        db.session.commit()
+                        
+                        last_update_time = current_time
+                        logger.info(f"Processed {total_files} files, {total_directories} directories, {format_size(total_size)}")
+                    except Exception as e:
+                        logger.error(f"Error updating scan progress: {e}")
                 
                 # Log progress every 100 directories for better visibility
                 if total_directories % 100 == 0:
