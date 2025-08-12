@@ -1259,6 +1259,7 @@ def get_settings():
         'max_scan_duration': int(get_setting('max_scan_duration', '6')),
         'max_items_per_folder': int(get_setting('max_items_per_folder', '100')),
         'max_shares_to_scan': int(get_setting('max_shares_to_scan', '0')),
+        'skip_appdata': get_setting('skip_appdata', 'true').lower() == 'true',
         'theme': get_setting('theme', 'unraid'),
         'themes': ['unraid', 'plex', 'dark', 'light']
     })
@@ -1271,7 +1272,7 @@ def update_settings():
         
         # Update settings in database
         for key, value in data.items():
-            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme', 'max_items_per_folder', 'max_shares_to_scan']:
+            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme', 'max_items_per_folder', 'max_shares_to_scan', 'skip_appdata']:
                 set_setting(key, str(value))
         
         # If scan_time was updated, reconfigure the scheduled scan
@@ -1323,7 +1324,8 @@ def reset_database():
             'theme': 'unraid',
             'themes': 'unraid,plex,light,dark',
             'max_items_per_folder': '100',
-            'max_shares_to_scan': '0'  # 0 = unlimited
+            'max_shares_to_scan': '0',  # 0 = unlimited
+            'skip_appdata': 'true'  # Skip appdata by default
         }
         
         for key, value in default_settings.items():

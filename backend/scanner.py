@@ -242,6 +242,14 @@ class FileScanner:
                 # Track current path for progress reporting
                 self.current_path = root
                 
+                # Check if we should skip appdata directory
+                skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
+                if skip_appdata and 'appdata' in root.lower():
+                    logger.info(f"Skipping appdata directory: {root}")
+                    # Remove appdata from dirs to prevent os.walk from entering it
+                    dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                    continue
+                
                 # Log current directory being processed with detailed info
                 logger.info(f"Processing directory: {root} (contains {len(dirs)} subdirs, {len(files)} files)")
                 

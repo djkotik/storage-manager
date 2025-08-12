@@ -8,6 +8,7 @@ interface AppSettings {
   max_scan_duration: number
   max_items_per_folder: number
   max_shares_to_scan: number
+  skip_appdata: boolean
   themes: string[]
 }
 
@@ -20,6 +21,7 @@ const Settings: React.FC = () => {
   const [maxScanDuration, setMaxScanDuration] = useState(6)
   const [maxItemsPerFolder, setMaxItemsPerFolder] = useState(100)
   const [maxSharesToScan, setMaxSharesToScan] = useState(0)
+  const [skipAppdata, setSkipAppdata] = useState(true)
 
   useEffect(() => {
     fetchSettings()
@@ -34,6 +36,7 @@ const Settings: React.FC = () => {
       setMaxScanDuration(response.data.max_scan_duration)
       setMaxItemsPerFolder(response.data.max_items_per_folder || 100)
       setMaxSharesToScan(response.data.max_shares_to_scan || 0)
+      setSkipAppdata(response.data.skip_appdata !== false) // Default to true
     } catch (error) {
       console.error('Error fetching settings:', error)
     } finally {
@@ -49,6 +52,7 @@ const Settings: React.FC = () => {
         max_scan_duration: maxScanDuration,
         max_items_per_folder: maxItemsPerFolder,
         max_shares_to_scan: maxSharesToScan,
+        skip_appdata: skipAppdata,
       })
       // Show success message
       alert('Settings saved successfully!')
@@ -185,6 +189,23 @@ const Settings: React.FC = () => {
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Maximum number of shares to scan (0 = unlimited, useful for testing)
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={skipAppdata}
+                onChange={(e) => setSkipAppdata(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Skip Appdata Directory
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Skip scanning the /appdata directory (contains thousands of Docker container files)
             </p>
           </div>
 
