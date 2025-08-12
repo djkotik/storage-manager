@@ -11,7 +11,8 @@ import {
   Sun, 
   Moon, 
   Palette,
-  X
+  X,
+  FileText
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import axios from 'axios'
@@ -35,7 +36,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: HardDrive },
     { name: 'Usage Explorer', href: '/files', icon: FolderOpen },
-    { name: 'Media', href: '/media', icon: Video },
+    { name: 'Files', href: '/media', icon: FileText },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'Duplicates', href: '/duplicates', icon: Copy },
     { name: 'Settings', href: '/settings', icon: Settings },

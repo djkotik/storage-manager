@@ -61,48 +61,58 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 10000) // Poll every 10 seconds instead of 2
+    // More frequent updates when scan is running
+    const interval = setInterval(fetchData, scanStatus.scanning ? 2000 : 10000)
     return () => clearInterval(interval)
-  }, [])
+  }, [scanStatus.scanning])
 
   const fetchData = async () => {
     try {
-      // Only fetch essential data on every poll
-      const [statusRes] = await Promise.all([
-        axios.get('/api/scan/status', { timeout: 5000 })
-      ])
-      
+      // Always fetch scan status for real-time updates
+      const statusRes = await axios.get('/api/scan/status', { timeout: 5000 })
       setScanStatus(statusRes.data)
       
-      // Fetch other data less frequently or only when needed
-      if (!analytics) {
-        try {
-          const analyticsRes = await axios.get('/api/analytics/overview', { timeout: 10000 })
-          setAnalytics(analyticsRes.data)
-        } catch (error) {
-          console.error('Error fetching analytics:', error)
-        }
-      }
-      
-      if (topShares.length === 0) {
-        try {
-          const topSharesRes = await axios.get('/api/analytics/top-shares', { timeout: 15000 })
-          setTopShares(topSharesRes.data.top_shares)
-        } catch (error) {
-          console.error('Error fetching top shares:', error)
-        }
-      }
-      
-      // Fetch logs less frequently
-      try {
-        const logsRes = await axios.get('/api/logs?lines=50', { timeout: 5000 })
+      // If scan is running, fetch all data more frequently
+      if (statusRes.data.scanning) {
+        const [analyticsRes, topSharesRes, logsRes] = await Promise.all([
+          axios.get('/api/analytics/overview', { timeout: 10000 }),
+          axios.get('/api/analytics/top-shares', { timeout: 15000 }),
+          axios.get('/api/logs?lines=50', { timeout: 5000 })
+        ])
+        
+        setAnalytics(analyticsRes.data)
+        setTopShares(topSharesRes.data.top_shares)
         setLogs(logsRes.data.logs)
-      } catch (error) {
-        console.error('Error fetching logs:', error)
+      } else {
+        // Only fetch other data if not already loaded or if scan just completed
+        if (!analytics) {
+          try {
+            const analyticsRes = await axios.get('/api/analytics/overview', { timeout: 10000 })
+            setAnalytics(analyticsRes.data)
+          } catch (error) {
+            console.error('Error fetching analytics:', error)
+          }
+        }
+        
+        if (topShares.length === 0) {
+          try {
+            const topSharesRes = await axios.get('/api/analytics/top-shares', { timeout: 15000 })
+            setTopShares(topSharesRes.data.top_shares)
+          } catch (error) {
+            console.error('Error fetching top shares:', error)
+          }
+        }
+        
+        // Fetch logs less frequently when not scanning
+        try {
+          const logsRes = await axios.get('/api/logs?lines=50', { timeout: 5000 })
+          setLogs(logsRes.data.logs)
+        } catch (error) {
+          console.error('Error fetching logs:', error)
+        }
       }
-      
     } catch (error) {
-      console.error('Error fetching dashboard data:', error)
+      console.error('Error fetching data:', error)
     } finally {
       setLoading(false)
     }

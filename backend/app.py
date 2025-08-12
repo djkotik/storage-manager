@@ -1572,65 +1572,105 @@ def get_scan_history():
         return jsonify({'error': 'Failed to get scan history'}), 500
 
 @app.route('/api/files')
+@retry_on_db_lock(max_retries=3, delay=2)
 def get_files():
     """Get files with filtering and pagination"""
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
         search = request.args.get('search', '')
-        path_filter = request.args.get('path', '')
-        extension_filter = request.args.get('extension', '')
-        sort_by = request.args.get('sort_by', 'name')
-        sort_order = request.args.get('sort_order', 'asc')
+        file_type = request.args.get('type', '')
+        modified_since = request.args.get('modified_since', '')
         
-        # Restrict listing to the latest completed scan by default unless a scan_id is provided
+        # Get latest completed scan
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
-
-        query = FileRecord.query
-        if latest_scan:
-            query = query.filter(FileRecord.scan_id == latest_scan.id)
         
-        # Apply filters
+        if not latest_scan:
+            return jsonify({
+                'files': [],
+                'pages': 0,
+                'current_page': page,
+                'total': 0
+            })
+        
+        query = FileRecord.query.filter(FileRecord.scan_id == latest_scan.id)
+        
+        # Apply search filter
         if search:
-            query = query.filter(FileRecord.name.ilike(f'%{search}%'))
-        if path_filter:
-            query = query.filter(FileRecord.path.ilike(f'%{path_filter}%'))
-        if extension_filter:
-            query = query.filter(FileRecord.extension == extension_filter)
+            query = query.filter(
+                db.or_(
+                    FileRecord.name.ilike(f'%{search}%'),
+                    FileRecord.path.ilike(f'%{search}%')
+                )
+            )
         
-        # Apply sorting
-        if sort_by == 'size':
-            order_col = FileRecord.size
-        elif sort_by == 'modified':
-            order_col = FileRecord.modified_time
-        else:
-            order_col = FileRecord.name
+        # Apply type filter
+        if file_type == 'file':
+            query = query.filter(FileRecord.is_directory == False)
+        elif file_type == 'directory':
+            query = query.filter(FileRecord.is_directory == True)
+        
+        # Apply modified since filter
+        if modified_since:
+            now = datetime.utcnow()
+            if modified_since == 'today':
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif modified_since == 'week':
+                start_date = now - timedelta(days=7)
+            elif modified_since == 'month':
+                start_date = now - timedelta(days=30)
+            elif modified_since == 'year':
+                start_date = now - timedelta(days=365)
+            elif modified_since == 'last_year':
+                start_date = now - timedelta(days=730)
+                end_date = now - timedelta(days=365)
+                query = query.filter(
+                    FileRecord.modified_time >= start_date,
+                    FileRecord.modified_time <= end_date
+                )
+            elif modified_since == 'older_1_year':
+                start_date = now - timedelta(days=365)
+                query = query.filter(FileRecord.modified_time < start_date)
+            elif modified_since == 'older_5_years':
+                start_date = now - timedelta(days=1825)
+                query = query.filter(FileRecord.modified_time < start_date)
+            else:
+                start_date = now - timedelta(days=365)
             
-        if sort_order == 'desc':
-            query = query.order_by(desc(order_col))
-        else:
-            query = query.order_by(order_col)
+            if modified_since not in ['last_year', 'older_1_year', 'older_5_years']:
+                query = query.filter(FileRecord.modified_time >= start_date)
         
-        files = query.paginate(page=page, per_page=per_page, error_out=False)
+        # Order by name
+        query = query.order_by(FileRecord.name)
+        
+        # Paginate
+        pagination = query.paginate(
+            page=page, per_page=per_page, error_out=False
+        )
+        
+        files = []
+        for file_record in pagination.items:
+            files.append({
+                'id': file_record.id,
+                'path': file_record.path,
+                'name': file_record.name,
+                'size': file_record.size,
+                'size_formatted': format_size(file_record.size),
+                'is_directory': file_record.is_directory,
+                'extension': file_record.extension or '',
+                'modified_time': file_record.modified_time.isoformat() if file_record.modified_time else None,
+                'parent_path': file_record.parent_path
+            })
         
         return jsonify({
-            'files': [{
-                'id': file.id,
-                'path': file.path,
-                'name': file.name,
-                'size': file.size,
-                'size_formatted': format_size(file.size),
-                'is_directory': file.is_directory,
-                'extension': file.extension,
-                'modified_time': file.modified_time.isoformat() if file.modified_time else None,
-                'permissions': file.permissions
-            } for file in files.items],
-            'total': files.total,
-            'pages': files.pages,
-            'current_page': files.page
+            'files': files,
+            'pages': pagination.pages,
+            'current_page': page,
+            'total': pagination.total
         })
+        
     except Exception as e:
         logger.error(f"Error getting files: {e}")
         return jsonify({'error': 'Failed to get files'}), 500
