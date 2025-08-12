@@ -221,13 +221,34 @@ class FileScanner:
             # Clear old file records for this scan
             FileRecord.query.filter_by(scan_id=self.current_scan.id).delete()
             
+            # Add timeout mechanism for os.walk
+            last_directory_time = time.time()
+            directory_timeout = 300  # 5 minutes timeout per directory
+            last_heartbeat = time.time()
+            heartbeat_interval = 30  # 30 seconds
+            
             for root, dirs, files in os.walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
+                
+                # Check for directory timeout
+                current_time = time.time()
+                if current_time - last_directory_time > directory_timeout:
+                    logger.error(f"Directory timeout: {root} has been processing for {directory_timeout} seconds")
+                    raise Exception(f"Directory processing timeout: {root}")
+                last_directory_time = current_time
                     
                 # Track current path for progress reporting
                 self.current_path = root
+                
+                # Log current directory being processed with detailed info
+                logger.info(f"Processing directory: {root} (contains {len(dirs)} subdirs, {len(files)} files)")
+                
+                # Heartbeat log every 30 seconds
+                if current_time - last_heartbeat > heartbeat_interval:
+                    logger.info(f"Scan heartbeat: Still processing {root} (total: {total_files} files, {total_directories} dirs)")
+                    last_heartbeat = current_time
                     
                 # Check if we've exceeded max duration
                 if time.time() - self.scan_start_time > self.max_duration:
@@ -246,6 +267,7 @@ class FileScanner:
                             break
                 
                 # Process directories
+                logger.info(f"Processing {len(dirs)} directories in {root}")
                 for dir_name in dirs:
                     try:
                         dir_path = Path(root) / dir_name
@@ -270,6 +292,7 @@ class FileScanner:
                         logger.warning(f"Error accessing directory {dir_path}: {e}")
                 
                 # Process files
+                logger.info(f"Processing {len(files)} files in {root}")
                 for file_name in files:
                     try:
                         file_path = Path(root) / file_name
