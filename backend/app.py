@@ -91,8 +91,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
+    'pool_size': 20,  # Increased from default 5
+    'max_overflow': 30,  # Increased from default 10
+    'pool_timeout': 60,  # Increased timeout
     'connect_args': {
-        'timeout': 30,
+        'timeout': 60,  # Increased from 30
         'check_same_thread': False
     }
 }
@@ -109,12 +112,13 @@ def enable_wal_mode():
         with db.engine.connect() as conn:
             conn.execute(db.text('PRAGMA journal_mode=WAL'))
             conn.execute(db.text('PRAGMA synchronous=NORMAL'))
-            conn.execute(db.text('PRAGMA cache_size=10000'))
+            conn.execute(db.text('PRAGMA cache_size=50000'))  # Increased cache size
             conn.execute(db.text('PRAGMA temp_store=MEMORY'))
-            conn.execute(db.text('PRAGMA busy_timeout=30000'))  # 30 second timeout
-            conn.execute(db.text('PRAGMA wal_autocheckpoint=1000'))  # Checkpoint every 1000 pages
+            conn.execute(db.text('PRAGMA busy_timeout=60000'))  # Increased to 60 seconds
+            conn.execute(db.text('PRAGMA wal_autocheckpoint=2000'))  # Checkpoint every 2000 pages
+            conn.execute(db.text('PRAGMA mmap_size=268435456'))  # 256MB memory mapping
             conn.commit()
-        logger.info("SQLite WAL mode enabled with improved settings")
+        logger.info("SQLite WAL mode enabled with improved settings for high concurrency")
     except Exception as e:
         logger.warning(f"Could not enable WAL mode: {e}")
 

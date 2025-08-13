@@ -375,9 +375,9 @@ class FileScanner:
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                 
-                # Update scan record more frequently (every 50 files or 3 seconds)
+                # Update scan record less frequently to reduce database contention (every 100 files or 5 seconds)
                 current_time = time.time()
-                if (total_files % 50 == 0 or current_time - last_update_time > 3):
+                if (total_files % 100 == 0 or current_time - last_update_time > 5):
                     try:
                         db.session.commit()
                         
@@ -394,6 +394,11 @@ class FileScanner:
                         # Try to recover from database errors
                         try:
                             db.session.rollback()
+                            # Force a new connection if we hit pool limits
+                            if "QueuePool limit" in str(e) or "connection timed out" in str(e):
+                                logger.info("Database pool exhausted, forcing connection refresh")
+                                db.session.close()
+                                db.session.remove()
                         except:
                             pass
                 

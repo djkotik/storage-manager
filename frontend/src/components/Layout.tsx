@@ -23,7 +23,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [version, setVersion] = useState('1.4.1')
+  const [version, setVersion] = useState('1.4.2')
   const [availableThemes, setAvailableThemes] = useState([
     { name: 'unRAID', value: 'unraid' },
     { name: 'Plex', value: 'plex' },
