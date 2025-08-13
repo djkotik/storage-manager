@@ -249,17 +249,23 @@ class FileScanner:
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
             if skip_appdata:
                 logger.info("Appdata exclusion enabled - will skip all appdata directories")
-                # Pre-filter the initial directories to remove appdata
-                if hasattr(self.data_path, 'iterdir'):
-                    try:
-                        initial_dirs = [d.name for d in self.data_path.iterdir() if d.is_dir()]
-                        appdata_dirs = [d for d in initial_dirs if 'appdata' in d.lower()]
-                        if appdata_dirs:
-                            logger.info(f"Found appdata directories at root level: {appdata_dirs}")
-                    except Exception as e:
-                        logger.warning(f"Could not pre-filter root directories: {e}")
             
-            for root, dirs, files in os.walk(self.data_path):
+            # Custom walk function that excludes appdata directories
+            def custom_walk(path):
+                """Custom walk function that excludes appdata directories"""
+                for root, dirs, files in os.walk(path):
+                    if skip_appdata:
+                        # Remove appdata directories from the dirs list to prevent os.walk from entering them
+                        dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                        
+                        # Also skip if the current root contains appdata
+                        if 'appdata' in root.lower():
+                            logger.info(f"Skipping appdata path in custom walk: {root}")
+                            continue
+                    
+                    yield root, dirs, files
+            
+            for root, dirs, files in custom_walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
@@ -285,23 +291,9 @@ class FileScanner:
                         logger.error(f"Scan appears stuck: {root} has been processing for {current_time - last_path_change:.0f} seconds")
                         raise Exception(f"Scan stuck in directory: {root}")
                 
-                # Check if we should skip appdata directory - more aggressive check
-                skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
-                root_lower = root.lower()
-                is_appdata_path = ('appdata' in root_lower or '/appdata' in root or '\\appdata' in root)
-                
-                if skip_appdata and is_appdata_path:
-                    logger.info(f"Skipping appdata directory: {root}")
-                    # Clear ALL subdirectories to prevent os.walk from entering any of them
-                    dirs.clear()
-                    # Skip processing ALL files in this directory
-                    files.clear()
-                    # Skip ALL processing for this directory
-                    continue
-                
-                # Additional check: if we're in any appdata-related path, skip everything
-                if skip_appdata and any(part.lower() == 'appdata' for part in Path(root).parts):
-                    logger.info(f"Skipping appdata-related path: {root}")
+                # Additional safety check for appdata (should not be needed with custom walk, but just in case)
+                if skip_appdata and 'appdata' in root.lower():
+                    logger.warning(f"Appdata path still detected despite custom walk: {root}")
                     dirs.clear()
                     files.clear()
                     continue
