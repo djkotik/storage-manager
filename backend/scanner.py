@@ -241,6 +241,10 @@ class FileScanner:
             stuck_timeout = 600  # 10 minutes without path change
             last_path = None
             
+            # Debug: Check appdata setting at start
+            skip_appdata_setting = get_setting('skip_appdata', 'true')
+            logger.info(f"Appdata exclusion setting: {skip_appdata_setting}")
+            
             for root, dirs, files in os.walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
@@ -256,17 +260,23 @@ class FileScanner:
                 # Track current path for progress reporting
                 self.current_path = root
                 
-                # Check for stuck detection
+                # Check for stuck detection - more aggressive for appdata
                 if last_path != root:
                     last_path = root
                     last_path_change = current_time
-                elif current_time - last_path_change > stuck_timeout:
-                    logger.error(f"Scan appears stuck: {root} has been processing for {stuck_timeout} seconds")
-                    raise Exception(f"Scan stuck in directory: {root}")
+                else:
+                    # Use shorter timeout for appdata directories
+                    current_stuck_timeout = 60 if 'appdata' in root.lower() else stuck_timeout
+                    if current_time - last_path_change > current_stuck_timeout:
+                        logger.error(f"Scan appears stuck: {root} has been processing for {current_time - last_path_change:.0f} seconds")
+                        raise Exception(f"Scan stuck in directory: {root}")
                 
-                # Check if we should skip appdata directory
+                # Check if we should skip appdata directory - more aggressive check
                 skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
-                if skip_appdata and ('appdata' in root.lower() or '/appdata' in root or '\\appdata' in root):
+                root_lower = root.lower()
+                is_appdata_path = ('appdata' in root_lower or '/appdata' in root or '\\appdata' in root)
+                
+                if skip_appdata and is_appdata_path:
                     logger.info(f"Skipping appdata directory: {root}")
                     # Remove appdata from dirs to prevent os.walk from entering it
                     dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
