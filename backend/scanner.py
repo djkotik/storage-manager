@@ -249,6 +249,15 @@ class FileScanner:
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
             if skip_appdata:
                 logger.info("Appdata exclusion enabled - will skip all appdata directories")
+                # Pre-filter the initial directories to remove appdata
+                if hasattr(self.data_path, 'iterdir'):
+                    try:
+                        initial_dirs = [d.name for d in self.data_path.iterdir() if d.is_dir()]
+                        appdata_dirs = [d for d in initial_dirs if 'appdata' in d.lower()]
+                        if appdata_dirs:
+                            logger.info(f"Found appdata directories at root level: {appdata_dirs}")
+                    except Exception as e:
+                        logger.warning(f"Could not pre-filter root directories: {e}")
             
             for root, dirs, files in os.walk(self.data_path):
                 if self.stop_scan:
@@ -283,12 +292,18 @@ class FileScanner:
                 
                 if skip_appdata and is_appdata_path:
                     logger.info(f"Skipping appdata directory: {root}")
-                    # Clear all subdirectories to prevent os.walk from entering any of them
+                    # Clear ALL subdirectories to prevent os.walk from entering any of them
                     dirs.clear()
-                    # Skip processing files in this directory too
-                    files = []
-                    # Also remove any appdata directories from the current level to prevent future entry
-                    dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                    # Skip processing ALL files in this directory
+                    files.clear()
+                    # Skip ALL processing for this directory
+                    continue
+                
+                # Additional check: if we're in any appdata-related path, skip everything
+                if skip_appdata and any(part.lower() == 'appdata' for part in Path(root).parts):
+                    logger.info(f"Skipping appdata-related path: {root}")
+                    dirs.clear()
+                    files.clear()
                     continue
                 
                 # Log current directory being processed with detailed info
