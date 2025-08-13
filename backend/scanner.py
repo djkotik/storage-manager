@@ -245,6 +245,11 @@ class FileScanner:
             skip_appdata_setting = get_setting('skip_appdata', 'true')
             logger.info(f"Appdata exclusion setting: {skip_appdata_setting}")
             
+            # Pre-filter directories to exclude appdata if setting is enabled
+            skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
+            if skip_appdata:
+                logger.info("Appdata exclusion enabled - will skip all appdata directories")
+            
             for root, dirs, files in os.walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
@@ -278,10 +283,12 @@ class FileScanner:
                 
                 if skip_appdata and is_appdata_path:
                     logger.info(f"Skipping appdata directory: {root}")
-                    # Remove appdata from dirs to prevent os.walk from entering it
-                    dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                    # Clear all subdirectories to prevent os.walk from entering any of them
+                    dirs.clear()
                     # Skip processing files in this directory too
                     files = []
+                    # Also remove any appdata directories from the current level to prevent future entry
+                    dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
                     continue
                 
                 # Log current directory being processed with detailed info
