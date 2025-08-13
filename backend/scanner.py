@@ -261,6 +261,9 @@ class FileScanner:
                         # Also skip if the current root contains appdata
                         if 'appdata' in root.lower():
                             logger.info(f"Skipping appdata path in custom walk: {root}")
+                            # Clear everything to prevent any processing
+                            dirs.clear()
+                            files.clear()
                             continue
                     
                     yield root, dirs, files
@@ -285,17 +288,29 @@ class FileScanner:
                     last_path = root
                     last_path_change = current_time
                 else:
-                    # Use shorter timeout for appdata directories
-                    current_stuck_timeout = 60 if 'appdata' in root.lower() else stuck_timeout
+                    # Use much shorter timeout for appdata directories
+                    current_stuck_timeout = 30 if 'appdata' in root.lower() else stuck_timeout
                     if current_time - last_path_change > current_stuck_timeout:
                         logger.error(f"Scan appears stuck: {root} has been processing for {current_time - last_path_change:.0f} seconds")
-                        raise Exception(f"Scan stuck in directory: {root}")
+                        # Force skip this directory by clearing everything
+                        dirs.clear()
+                        files.clear()
+                        logger.info(f"Forced skip of stuck directory: {root}")
+                        continue
                 
                 # Additional safety check for appdata (should not be needed with custom walk, but just in case)
                 if skip_appdata and 'appdata' in root.lower():
                     logger.warning(f"Appdata path still detected despite custom walk: {root}")
                     dirs.clear()
                     files.clear()
+                    continue
+                
+                # Force skip any directory that has been processing for too long (emergency escape)
+                if current_time - last_directory_time > 120:  # 2 minutes per directory max
+                    logger.error(f"Directory processing timeout exceeded: {root} - forcing skip")
+                    dirs.clear()
+                    files.clear()
+                    last_directory_time = current_time
                     continue
                 
                 # Log current directory being processed with detailed info
