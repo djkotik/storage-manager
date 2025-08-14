@@ -3001,22 +3001,22 @@ if __name__ == '__main__':
 def get_version():
     """Get application version"""
     try:
-        # Look for VERSION file in the app root directory
-        version_file = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
+        # Look for VERSION file in the current directory (where it's copied in Docker)
+        version_file = 'VERSION'
         if os.path.exists(version_file):
             with open(version_file, 'r') as f:
                 version = f.read().strip()
         else:
-            # Fallback: look in current directory
-            version_file = 'VERSION'
+            # Fallback: look in parent directory
+            version_file = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
             if os.path.exists(version_file):
                 with open(version_file, 'r') as f:
                     version = f.read().strip()
             else:
-                version = "1.0.0"  # Final fallback version
+                version = "1.4.7"  # Final fallback version
         return jsonify({'version': version})
     except Exception as e:
         logger.error(f"Error reading version: {e}")
-        return jsonify({'version': '1.0.0'})
+        return jsonify({'version': '1.4.7'})
 
 # Optimize the top-shares endpoint to use pre-calculated totals with fallback
