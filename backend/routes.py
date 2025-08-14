@@ -80,6 +80,16 @@ def register_routes(app):
             logger.error(f"Error stopping scan: {e}")
             return jsonify({'error': 'Failed to stop scan'}), 500
 
+    @app.route('/api/scan/force-reset', methods=['POST'])
+    def force_reset_scan():
+        """Force reset scanner state and clear any stuck scans"""
+        try:
+            scanner.force_reset()
+            return jsonify({'message': 'Scanner force reset completed'})
+        except Exception as e:
+            logger.error(f"Error force resetting scanner: {e}")
+            return jsonify({'error': 'Failed to force reset scanner'}), 500
+
     @app.route('/api/scan/status')
     def get_scan_status():
         """Get current scan status"""
