@@ -2934,6 +2934,29 @@ def get_folder_children_by_path(folder_path):
         logger.error(f"Error getting folder children for {folder_path}: {e}")
         return jsonify({'error': 'Failed to get folder children'}), 500
 
+# Version endpoint
+@app.route('/api/version')
+def get_version():
+    """Get application version"""
+    try:
+        # Look for VERSION file in the current directory (where it's copied in Docker)
+        version_file = 'VERSION'
+        if os.path.exists(version_file):
+            with open(version_file, 'r') as f:
+                version = f.read().strip()
+        else:
+            # Fallback: look in parent directory
+            version_file = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
+            if os.path.exists(version_file):
+                with open(version_file, 'r') as f:
+                    version = f.read().strip()
+            else:
+                version = "1.4.7"  # Final fallback version
+        return jsonify({'version': version})
+    except Exception as e:
+        logger.error(f"Error reading version: {e}")
+        return jsonify({'version': '1.4.7'})
+
 # Application startup
 if __name__ == '__main__':
     logger.info("Starting Flask application...")
@@ -2995,28 +3018,5 @@ if __name__ == '__main__':
     
     logger.info("Starting Flask server on 0.0.0.0:8080")
     app.run(host='0.0.0.0', port=8080, debug=False) 
-
-# Version endpoint
-@app.route('/api/version')
-def get_version():
-    """Get application version"""
-    try:
-        # Look for VERSION file in the current directory (where it's copied in Docker)
-        version_file = 'VERSION'
-        if os.path.exists(version_file):
-            with open(version_file, 'r') as f:
-                version = f.read().strip()
-        else:
-            # Fallback: look in parent directory
-            version_file = os.path.join(os.path.dirname(__file__), '..', 'VERSION')
-            if os.path.exists(version_file):
-                with open(version_file, 'r') as f:
-                    version = f.read().strip()
-            else:
-                version = "1.4.7"  # Final fallback version
-        return jsonify({'version': version})
-    except Exception as e:
-        logger.error(f"Error reading version: {e}")
-        return jsonify({'version': '1.4.7'})
 
 # Optimize the top-shares endpoint to use pre-calculated totals with fallback
