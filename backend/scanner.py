@@ -134,9 +134,11 @@ class FileScanner:
         db.session.commit()
         
         # Start scan in background thread
+        logger.info(f"About to start scan thread for scan ID {self.current_scan.id}")
         scan_thread = threading.Thread(target=self._scan_filesystem)
         scan_thread.daemon = True
         scan_thread.start()
+        logger.info(f"Scan thread started successfully for scan ID {self.current_scan.id}")
         
         logger.info(f"Started scan session {self.current_scan.id}")
         return self.current_scan.id
@@ -249,8 +251,10 @@ class FileScanner:
 
     def _scan_filesystem(self):
         """Main scanning method with proper appdata exclusion"""
+        logger.info(f"=== SCANNER THREAD STARTED ===")
+        logger.info(f"Thread ID: {threading.current_thread().ident}")
+        logger.info(f"Starting filesystem scan of {self.data_path}")
         try:
-            logger.info(f"Starting filesystem scan of {self.data_path}")
             
             total_files = 0
             total_directories = 0
@@ -539,12 +543,16 @@ class FileScanner:
             
         except Exception as e:
             logger.error(f"Scan failed: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             if self.current_scan:
                 self.current_scan.status = 'failed'
                 self.current_scan.error_message = str(e)
                 self.current_scan.end_time = datetime.utcnow()
                 db.session.commit()
         finally:
+            logger.info(f"=== SCANNER THREAD ENDING ===")
             self.scanning = False
 
     def _extract_media_metadata(self, file_record: FileRecord, file_path: Path):
