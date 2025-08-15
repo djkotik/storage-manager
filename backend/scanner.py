@@ -308,8 +308,29 @@ class FileScanner:
                 
                 return False
             
-            # Main scanning loop using standard os.walk with proper exclusion
-            for root, dirs, files in os.walk(self.data_path):
+            # Custom walk function that properly excludes appdata
+            def safe_walk(path):
+                """Custom walk function that excludes appdata directories before entering them"""
+                for root, dirs, files in os.walk(path):
+                    # CRITICAL: Filter out appdata directories BEFORE os.walk processes them
+                    if skip_appdata:
+                        original_dirs = dirs.copy()
+                        dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                        if len(dirs) != len(original_dirs):
+                            logger.info(f"Filtered out {len(original_dirs) - len(dirs)} appdata directories from {root}")
+                    
+                    # CRITICAL: Check if current root should be excluded
+                    if should_exclude_path(root):
+                        logger.info(f"Excluding entire directory tree: {root}")
+                        # Clear everything to prevent any processing
+                        dirs.clear()
+                        files.clear()
+                        continue
+                    
+                    yield root, dirs, files
+            
+            # Main scanning loop using custom safe_walk
+            for root, dirs, files in safe_walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
@@ -323,22 +344,6 @@ class FileScanner:
                     
                 # Track current path for progress reporting
                 self.current_path = root
-                
-                # CRITICAL: Check if current root should be excluded BEFORE processing
-                if should_exclude_path(root):
-                    logger.info(f"Excluding entire directory tree: {root}")
-                    # Clear dirs list to prevent os.walk from entering subdirectories
-                    dirs.clear()
-                    # Skip processing files in this directory
-                    files.clear()
-                    continue
-                
-                # CRITICAL: Remove appdata directories from dirs list BEFORE os.walk processes them
-                if skip_appdata:
-                    original_dirs = dirs.copy()
-                    dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
-                    if len(dirs) != len(original_dirs):
-                        logger.info(f"Filtered out {len(original_dirs) - len(dirs)} appdata directories from {root}")
                 
                 # Check for stuck detection
                 if last_path != root:
