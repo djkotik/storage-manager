@@ -311,23 +311,50 @@ class FileScanner:
             # Custom walk function that properly excludes appdata
             def safe_walk(path):
                 """Custom walk function that excludes appdata directories before entering them"""
-                for root, dirs, files in os.walk(path):
-                    # CRITICAL: Filter out appdata directories BEFORE os.walk processes them
-                    if skip_appdata:
-                        original_dirs = dirs.copy()
-                        dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
-                        if len(dirs) != len(original_dirs):
-                            logger.info(f"Filtered out {len(original_dirs) - len(dirs)} appdata directories from {root}")
-                    
-                    # CRITICAL: Check if current root should be excluded
-                    if should_exclude_path(root):
-                        logger.info(f"Excluding entire directory tree: {root}")
-                        # Clear everything to prevent any processing
-                        dirs.clear()
-                        files.clear()
-                        continue
-                    
-                    yield root, dirs, files
+                def walk_directories(start_path):
+                    """Recursive directory walker that excludes appdata"""
+                    try:
+                        # Get all items in current directory
+                        items = os.listdir(start_path)
+                        dirs = []
+                        files = []
+                        
+                        for item in items:
+                            item_path = os.path.join(start_path, item)
+                            
+                            # Skip if this is an appdata directory
+                            if skip_appdata and 'appdata' in item.lower():
+                                logger.info(f"Skipping appdata directory: {item_path}")
+                                continue
+                                
+                            if os.path.isdir(item_path):
+                                dirs.append(item)
+                            elif os.path.isfile(item_path):
+                                files.append(item)
+                        
+                        # Yield current directory
+                        yield start_path, dirs, files
+                        
+                        # Recursively process subdirectories
+                        for dir_name in dirs:
+                            subdir_path = os.path.join(start_path, dir_name)
+                            # Double-check we're not entering appdata
+                            if skip_appdata and 'appdata' in subdir_path.lower():
+                                logger.info(f"Preventing entry into appdata: {subdir_path}")
+                                continue
+                            yield from walk_directories(subdir_path)
+                            
+                    except PermissionError:
+                        logger.warning(f"Permission denied accessing: {start_path}")
+                    except Exception as e:
+                        logger.error(f"Error processing directory {start_path}: {e}")
+                
+                return walk_directories(path)
+            
+            # CRITICAL: Check if the starting path itself should be excluded
+            if should_exclude_path(str(self.data_path)):
+                logger.error(f"Starting path {self.data_path} is excluded - cannot scan")
+                raise Exception(f"Cannot scan excluded path: {self.data_path}")
             
             # Main scanning loop using custom safe_walk
             for root, dirs, files in safe_walk(self.data_path):
