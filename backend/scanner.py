@@ -234,7 +234,8 @@ class FileScanner:
             'current_path': current_path,
             'estimated_completion': estimated_completion.isoformat() if estimated_completion else None,
             'progress_percentage': progress_percentage,
-            'processing_rate': processing_rate
+            'processing_rate': processing_rate,
+            'scan_duration': self._format_duration(elapsed_time)
         }
     
     def _format_duration(self, seconds: float) -> str:
@@ -293,6 +294,7 @@ class FileScanner:
             
             # Pre-filter directories to exclude appdata if setting is enabled
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
+            logger.info(f"skip_appdata variable value: {skip_appdata}")
             if skip_appdata:
                 logger.info("Appdata exclusion enabled - will skip all appdata directories")
             else:
@@ -326,8 +328,8 @@ class FileScanner:
                         for item in items:
                             item_path = os.path.join(start_path, item)
                             
-                            # Skip if this is an appdata directory
-                            if skip_appdata and 'appdata' in item.lower():
+                            # CRITICAL FIX: Check the FULL PATH for appdata, not just the item name
+                            if skip_appdata and 'appdata' in item_path.lower():
                                 logger.info(f"Skipping appdata directory: {item_path}")
                                 continue
                                 

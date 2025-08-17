@@ -220,6 +220,11 @@ const Dashboard: React.FC = () => {
                     Current: {scanStatus.current_path}
                   </p>
                 )}
+                {scanStatus.scan_duration && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Duration: {scanStatus.scan_duration}
+                  </p>
+                )}
                 {scanStatus.elapsed_time_formatted && (
                   <p className="text-xs text-blue-700 dark:text-blue-300">
                     Elapsed: {scanStatus.elapsed_time_formatted}

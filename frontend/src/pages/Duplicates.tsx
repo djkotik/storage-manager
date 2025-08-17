@@ -28,10 +28,21 @@ const Duplicates: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
   const [deletingFiles, setDeletingFiles] = useState<Set<number>>(new Set())
+  const [scanStatus, setScanStatus] = useState<any>({ status: 'idle', scanning: false })
 
   useEffect(() => {
     fetchDuplicates()
+    fetchScanStatus()
   }, [])
+
+  const fetchScanStatus = async () => {
+    try {
+      const response = await axios.get('/api/scan/status')
+      setScanStatus(response.data)
+    } catch (error) {
+      console.error('Error fetching scan status:', error)
+    }
+  }
 
   const fetchDuplicates = async () => {
     try {
@@ -86,6 +97,23 @@ const Duplicates: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Scan Progress Notice */}
+      {scanStatus.scanning && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 dark:bg-blue-900/20 dark:border-blue-800">
+          <div className="flex items-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+            <div>
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                Scan in progress...
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Updated information will be shown once scan is complete. Currently processing: {scanStatus.total_files?.toLocaleString() || 0} files
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
