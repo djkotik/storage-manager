@@ -79,20 +79,25 @@ const Dashboard: React.FC = () => {
       
       // If scan is running, fetch all data more frequently
       if (statusRes.data.scanning) {
-        const [analyticsRes, topSharesRes, logsRes] = await Promise.all([
-          axios.get('/api/analytics/overview', { timeout: 10000 }),
-          axios.get('/api/analytics/top-shares', { timeout: 15000 }),
-          axios.get('/api/logs?lines=50', { timeout: 5000 })
-        ])
-        
-        setAnalytics(analyticsRes.data)
-        setTopShares(topSharesRes.data.top_shares)
-        setLogs(logsRes.data.logs)
+        try {
+          const [analyticsRes, topSharesRes, logsRes] = await Promise.all([
+            axios.get('/api/analytics/overview', { timeout: 30000 }),
+            axios.get('/api/analytics/top-shares', { timeout: 30000 }),
+            axios.get('/api/logs?lines=50', { timeout: 10000 })
+          ])
+          
+          setAnalytics(analyticsRes.data)
+          setTopShares(topSharesRes.data.top_shares)
+          setLogs(logsRes.data.logs)
+        } catch (error) {
+          console.warn('Some API calls timed out during scan, but scan status is still available:', error)
+          // Don't fail the entire fetch - scan status is more important
+        }
       } else {
         // Only fetch other data if not already loaded or if scan just completed
         if (!analytics) {
           try {
-            const analyticsRes = await axios.get('/api/analytics/overview', { timeout: 10000 })
+            const analyticsRes = await axios.get('/api/analytics/overview', { timeout: 30000 })
             setAnalytics(analyticsRes.data)
           } catch (error) {
             console.error('Error fetching analytics:', error)
