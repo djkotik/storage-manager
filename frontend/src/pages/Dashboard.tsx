@@ -23,6 +23,7 @@ interface ScanStatus {
   is_first_scan?: boolean
   progress_percentage?: number
   processing_rate?: string
+  scan_duration?: string
 }
 
 interface AnalyticsOverview {
