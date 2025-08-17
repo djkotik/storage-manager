@@ -219,6 +219,10 @@ class FileScanner:
                 estimated_remaining = estimated_total_time - elapsed_time
                 estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
             
+        # Debug logging for scan duration
+        scan_duration = self._format_duration(elapsed_time)
+        logger.info(f"DEBUG: elapsed_time={elapsed_time}, scan_duration='{scan_duration}'")
+        
         return {
             'scan_id': self.current_scan.id,
             'status': self.current_scan.status,
@@ -235,7 +239,7 @@ class FileScanner:
             'estimated_completion': estimated_completion.isoformat() if estimated_completion else None,
             'progress_percentage': progress_percentage,
             'processing_rate': processing_rate,
-            'scan_duration': self._format_duration(elapsed_time)
+            'scan_duration': scan_duration
         }
     
     def _format_duration(self, seconds: float) -> str:

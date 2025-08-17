@@ -74,6 +74,7 @@ const Dashboard: React.FC = () => {
     try {
       // Always fetch scan status for real-time updates
       const statusRes = await axios.get('/api/scan/status', { timeout: 5000 })
+      console.log('DEBUG: Scan status response:', statusRes.data)
       setScanStatus(statusRes.data)
       
       // If scan is running, fetch all data more frequently
