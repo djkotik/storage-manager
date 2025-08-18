@@ -200,19 +200,25 @@ class FileScanner:
         elapsed_time = time.time() - self.scan_start_time if self.scan_start_time else 0
         current_path = getattr(self, 'current_path', 'Unknown')
         
+        # Get current progress from in-memory variables (more accurate than database)
+        # These are updated in real-time during scanning
+        total_files = getattr(self, '_total_files', self.current_scan.total_files or 0)
+        total_directories = getattr(self, '_total_directories', self.current_scan.total_directories or 0)
+        total_size = getattr(self, '_total_size', self.current_scan.total_size or 0)
+        
         # Calculate processing rate
         processing_rate = None
-        if elapsed_time > 0 and self.current_scan.total_files > 0:
-            files_per_second = self.current_scan.total_files / elapsed_time
+        if elapsed_time > 0 and total_files > 0:
+            files_per_second = total_files / elapsed_time
             processing_rate = f"{files_per_second:.1f} files/sec"
         
         # Estimate completion time based on current progress
         estimated_completion = None
         progress_percentage = 0
-        if self.current_scan.total_directories > 0 and elapsed_time > 0:
+        if total_directories > 0 and elapsed_time > 0:
             # Rough estimate: assume 210,006 total directories based on logs
             total_estimated_dirs = 210006
-            progress_percentage = min(100, (self.current_scan.total_directories / total_estimated_dirs) * 100)
+            progress_percentage = min(100, (total_directories / total_estimated_dirs) * 100)
             
             if progress_percentage > 0:
                 estimated_total_time = elapsed_time / (progress_percentage / 100)
@@ -222,16 +228,17 @@ class FileScanner:
         # Calculate scan duration
         scan_duration = self._format_duration(elapsed_time)
         logger.info(f"SCAN DURATION: {scan_duration} (elapsed_time={elapsed_time:.1f}s)")
+        logger.info(f"CURRENT PROGRESS: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)}")
         
         return {
             'scan_id': self.current_scan.id,
             'status': self.current_scan.status,
             'start_time': self.current_scan.start_time.isoformat(),
             'end_time': self.current_scan.end_time.isoformat() if self.current_scan.end_time else None,
-            'total_files': self.current_scan.total_files,
-            'total_directories': self.current_scan.total_directories,
-            'total_size': self.current_scan.total_size,
-            'total_size_formatted': format_size(self.current_scan.total_size),
+            'total_files': total_files,
+            'total_directories': total_directories,
+            'total_size': total_size,
+            'total_size_formatted': format_size(total_size),
             'scanning': self.scanning,
             'elapsed_time': elapsed_time,
             'elapsed_time_formatted': self._format_duration(elapsed_time),
@@ -265,6 +272,11 @@ class FileScanner:
             total_directories = 0
             total_size = 0
             last_update_time = time.time()
+            
+            # Store progress in instance variables for real-time access
+            self._total_files = 0
+            self._total_directories = 0
+            self._total_size = 0
             
             # Get max shares to scan setting
             max_shares_to_scan = int(get_setting('max_shares_to_scan', '0'))
@@ -494,6 +506,7 @@ class FileScanner:
                         )
                         dir_batch.append(file_record)
                         total_directories += 1
+                        self._total_directories = total_directories
                         
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing directory {dir_path}: {e}")
@@ -525,6 +538,8 @@ class FileScanner:
                         
                         total_files += 1
                         total_size += stat.st_size
+                        self._total_files = total_files
+                        self._total_size = total_size
                         
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
