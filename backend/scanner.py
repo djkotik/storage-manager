@@ -219,9 +219,9 @@ class FileScanner:
                 estimated_remaining = estimated_total_time - elapsed_time
                 estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
             
-        # Debug logging for scan duration
+        # Calculate scan duration
         scan_duration = self._format_duration(elapsed_time)
-        logger.info(f"DEBUG: elapsed_time={elapsed_time}, scan_duration='{scan_duration}'")
+        logger.info(f"SCAN DURATION: {scan_duration} (elapsed_time={elapsed_time:.1f}s)")
         
         return {
             'scan_id': self.current_scan.id,
@@ -273,11 +273,13 @@ class FileScanner:
             # Clear old file records for this scan
             FileRecord.query.filter_by(scan_id=self.current_scan.id).delete()
             
-            # Add timeout mechanism
+            # Enhanced timeout and stuck detection
             last_directory_time = time.time()
-            directory_timeout = 300  # 5 minutes timeout per directory
+            directory_timeout = 120  # 2 minutes timeout per directory (reduced from 5)
             last_heartbeat = time.time()
-            heartbeat_interval = 30  # 30 seconds
+            heartbeat_interval = 30  # Log heartbeat every 30 seconds
+            last_path = None
+            last_path_change = time.time()
             
             # Add overall scan timeout protection
             scan_start_time = time.time()
@@ -318,48 +320,68 @@ class FileScanner:
                 
                 return False
             
-            # Custom walk function that properly excludes appdata
+            # COMPLETE REWRITE: Simple and robust directory walker
             def safe_walk(path):
-                """Custom walk function that excludes appdata directories before entering them"""
-                def walk_directories(start_path):
-                    """Recursive directory walker that excludes appdata"""
+                """Simple directory walker that completely avoids appdata"""
+                def should_skip_directory(dir_path):
+                    """Check if directory should be skipped"""
+                    if not skip_appdata:
+                        return False
+                    return 'appdata' in dir_path.lower()
+                
+                def walk_recursive(current_path):
+                    """Recursive walker that skips appdata"""
                     try:
-                        # Get all items in current directory
-                        items = os.listdir(start_path)
+                        # Skip if this is an appdata directory
+                        if should_skip_directory(current_path):
+                            logger.info(f"SKIPPING appdata directory: {current_path}")
+                            return
+                        
+                        # Get directory contents
+                        try:
+                            items = os.listdir(current_path)
+                        except PermissionError:
+                            logger.warning(f"Permission denied: {current_path}")
+                            return
+                        except Exception as e:
+                            logger.error(f"Error reading directory {current_path}: {e}")
+                            return
+                        
                         dirs = []
                         files = []
                         
+                        # Separate files and directories
                         for item in items:
-                            item_path = os.path.join(start_path, item)
-                            
-                            # CRITICAL FIX: Check the FULL PATH for appdata, not just the item name
-                            if skip_appdata and 'appdata' in item_path.lower():
-                                logger.info(f"Skipping appdata directory: {item_path}")
+                            item_path = os.path.join(current_path, item)
+                            try:
+                                if os.path.isdir(item_path):
+                                    # Check if this subdirectory should be skipped
+                                    if should_skip_directory(item_path):
+                                        logger.info(f"SKIPPING appdata subdirectory: {item_path}")
+                                        continue
+                                    dirs.append(item)
+                                elif os.path.isfile(item_path):
+                                    files.append(item)
+                            except Exception as e:
+                                logger.warning(f"Error checking {item_path}: {e}")
                                 continue
-                                
-                            if os.path.isdir(item_path):
-                                dirs.append(item)
-                            elif os.path.isfile(item_path):
-                                files.append(item)
                         
                         # Yield current directory
-                        yield start_path, dirs, files
+                        yield current_path, dirs, files
                         
-                        # Recursively process subdirectories
+                        # Process subdirectories
                         for dir_name in dirs:
-                            subdir_path = os.path.join(start_path, dir_name)
-                            # Double-check we're not entering appdata
-                            if skip_appdata and 'appdata' in subdir_path.lower():
-                                logger.info(f"Preventing entry into appdata: {subdir_path}")
-                                continue
-                            yield from walk_directories(subdir_path)
-                            
-                    except PermissionError:
-                        logger.warning(f"Permission denied accessing: {start_path}")
+                            subdir_path = os.path.join(current_path, dir_name)
+                            # Double-check before recursion
+                            if not should_skip_directory(subdir_path):
+                                yield from walk_recursive(subdir_path)
+                            else:
+                                logger.info(f"PREVENTING recursion into appdata: {subdir_path}")
+                                
                     except Exception as e:
-                        logger.error(f"Error processing directory {start_path}: {e}")
+                        logger.error(f"Error in walk_recursive for {current_path}: {e}")
                 
-                return walk_directories(path)
+                return walk_recursive(path)
             
             # CRITICAL: Check if the starting path itself should be excluded
             if should_exclude_path(str(self.data_path)):
@@ -382,20 +404,30 @@ class FileScanner:
                 # Track current path for progress reporting
                 self.current_path = root
                 
-                # Check for stuck detection
+                # Enhanced stuck detection and progress logging
                 if last_path != root:
                     last_path = root
                     last_path_change = current_time
                     logger.info(f"Processing directory: {root}")
+                    
+                    # Log progress every 1000 directories
+                    if total_directories % 1000 == 0:
+                        logger.info(f"=== SCAN PROGRESS ===")
+                        logger.info(f"Files processed: {total_files:,}")
+                        logger.info(f"Directories processed: {total_directories:,}")
+                        logger.info(f"Total size: {format_size(total_size)}")
+                        logger.info(f"Current path: {root}")
+                        logger.info(f"Elapsed time: {self._format_duration(elapsed_time)}")
                 else:
-                    # Use shorter timeout for any directory that seems stuck
-                    current_stuck_timeout = 60  # 1 minute timeout for stuck detection
-                    if current_time - last_path_change > current_stuck_timeout:
-                        logger.error(f"Scan appears stuck: {root} has been processing for {current_time - last_path_change:.0f} seconds")
-                        # Force skip this directory by clearing everything
+                    # Check for stuck detection - shorter timeout
+                    stuck_timeout = 30  # 30 seconds timeout for stuck detection (reduced from 60)
+                    if current_time - last_path_change > stuck_timeout:
+                        logger.error(f"SCAN STUCK: {root} has been processing for {current_time - last_path_change:.0f} seconds")
+                        logger.error(f"Files in current directory: {len(files)}, Subdirectories: {len(dirs)}")
+                        # Force skip this directory
                         dirs.clear()
                         files.clear()
-                        logger.info(f"Forced skip of stuck directory: {root}")
+                        logger.info(f"FORCED SKIP of stuck directory: {root}")
                         continue
                 
                 # Force skip any directory that has been processing for too long (emergency escape)
