@@ -75,6 +75,8 @@ const Dashboard: React.FC = () => {
       // Always fetch scan status for real-time updates
       const statusRes = await axios.get('/api/scan/status', { timeout: 5000 })
       console.log('DEBUG: Scan status response:', statusRes.data)
+      console.log('DEBUG: scan_duration field:', statusRes.data.scan_duration)
+      console.log('DEBUG: elapsed_time_formatted field:', statusRes.data.elapsed_time_formatted)
       setScanStatus(statusRes.data)
       
       // If scan is running, fetch all data more frequently
@@ -227,14 +229,9 @@ const Dashboard: React.FC = () => {
                     Current: {scanStatus.current_path}
                   </p>
                 )}
-                {scanStatus.scan_duration && (
+                {(scanStatus.scan_duration || scanStatus.elapsed_time_formatted) && (
                   <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Duration: {scanStatus.scan_duration}
-                  </p>
-                )}
-                {scanStatus.elapsed_time_formatted && (
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Elapsed: {scanStatus.elapsed_time_formatted}
+                    Duration: {scanStatus.scan_duration || scanStatus.elapsed_time_formatted || 'Unknown'}
                   </p>
                 )}
                 {scanStatus.processing_rate && (

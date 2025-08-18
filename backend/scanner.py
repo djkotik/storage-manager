@@ -468,6 +468,11 @@ class FileScanner:
                             logger.info(f"Reached max shares limit ({max_shares_to_scan}), stopping scan")
                             break
                 
+                # Process directories and files in batches to reduce database contention
+                batch_size = 100  # Process in batches of 100
+                dir_batch = []
+                file_batch = []
+                
                 # Process directories
                 logger.info(f"Processing {len(dirs)} directories in {root}")
                 for dir_name in dirs:
@@ -487,7 +492,7 @@ class FileScanner:
                             permissions=oct(stat.st_mode)[-3:],
                             scan_id=self.current_scan.id
                         )
-                        db.session.add(file_record)
+                        dir_batch.append(file_record)
                         total_directories += 1
                         
                     except (OSError, PermissionError) as e:
@@ -516,7 +521,7 @@ class FileScanner:
                             permissions=oct(stat.st_mode)[-3:],
                             scan_id=self.current_scan.id
                         )
-                        db.session.add(file_record)
+                        file_batch.append(file_record)
                         
                         total_files += 1
                         total_size += stat.st_size
@@ -524,12 +529,42 @@ class FileScanner:
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                 
-                # Update scan record less frequently to reduce database contention (every 100 files or 5 seconds)
-                current_time = time.time()
-                if (total_files % 100 == 0 or current_time - last_update_time > 5):
+                # Commit batches to database
+                try:
+                    # Add directory batch
+                    if dir_batch:
+                        db.session.bulk_save_objects(dir_batch)
+                        logger.info(f"Committed {len(dir_batch)} directories to database")
+                    
+                    # Add file batch
+                    if file_batch:
+                        db.session.bulk_save_objects(file_batch)
+                        logger.info(f"Committed {len(file_batch)} files to database")
+                    
+                    # Commit the batch
+                    db.session.commit()
+                    
+                except Exception as e:
+                    logger.error(f"Error committing batch to database: {e}")
                     try:
-                        db.session.commit()
-                        
+                        db.session.rollback()
+                        # If database is locked, wait and retry
+                        if "database is locked" in str(e):
+                            logger.info("Database locked, waiting 2 seconds before retry")
+                            time.sleep(2)
+                            # Retry the commit
+                            db.session.commit()
+                    except Exception as retry_error:
+                        logger.error(f"Retry failed: {retry_error}")
+                        # Clear the session and continue
+                        db.session.rollback()
+                        db.session.close()
+                        db.session.remove()
+                
+                # Update scan record less frequently to reduce database contention (every 500 files or 10 seconds)
+                current_time = time.time()
+                if (total_files % 500 == 0 or current_time - last_update_time > 10):
+                    try:
                         # Update scan record with current progress
                         self.current_scan.total_files = total_files
                         self.current_scan.total_directories = total_directories
@@ -544,10 +579,12 @@ class FileScanner:
                         try:
                             db.session.rollback()
                             # Force a new connection if we hit pool limits
-                            if "QueuePool limit" in str(e) or "connection timed out" in str(e):
-                                logger.info("Database pool exhausted, forcing connection refresh")
+                            if "database is locked" in str(e) or "QueuePool limit" in str(e) or "connection timed out" in str(e):
+                                logger.info("Database locked/pool exhausted, forcing connection refresh")
                                 db.session.close()
                                 db.session.remove()
+                                # Wait a moment before retrying
+                                time.sleep(1)
                         except:
                             pass
                 
