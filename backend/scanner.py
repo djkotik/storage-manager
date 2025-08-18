@@ -230,7 +230,8 @@ class FileScanner:
         logger.info(f"SCAN DURATION: {scan_duration} (elapsed_time={elapsed_time:.1f}s)")
         logger.info(f"CURRENT PROGRESS: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)}")
         
-        return {
+        # Debug: Log what we're returning
+        response_data = {
             'scan_id': self.current_scan.id,
             'status': self.current_scan.status,
             'start_time': self.current_scan.start_time.isoformat(),
@@ -248,6 +249,9 @@ class FileScanner:
             'processing_rate': processing_rate,
             'scan_duration': scan_duration
         }
+        logger.info(f"RETURNING TO FRONTEND: scan_duration='{scan_duration}', elapsed_time_formatted='{self._format_duration(elapsed_time)}'")
+        
+        return response_data
     
     def _format_duration(self, seconds: float) -> str:
         """Format duration in seconds to human readable format"""
