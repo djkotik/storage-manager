@@ -151,6 +151,24 @@ const Dashboard: React.FC = () => {
     }
   }
 
+  const forceReset = async () => {
+    try {
+      await axios.post('/api/scan/force-reset')
+      await fetchData()
+    } catch (error) {
+      console.error('Error force resetting scan:', error)
+    }
+  }
+
+  const unlockDatabase = async () => {
+    try {
+      await axios.post('/api/database/unlock')
+      await fetchData()
+    } catch (error) {
+      console.error('Error unlocking database:', error)
+    }
+  }
+
   const getLogLevelColor = (level: string) => {
     switch (level.toUpperCase()) {
       case 'ERROR':
@@ -188,14 +206,24 @@ const Dashboard: React.FC = () => {
         {/* Scan Controls */}
         <div className="flex space-x-3">
           {scanStatus.scanning ? (
-            <button
-              onClick={stopScan}
-              disabled={scanLoading}
-              className="btn btn-danger px-4 py-2"
-            >
-              <Square className="h-4 w-4 mr-2" />
-              Stop Scan
-            </button>
+            <>
+              <button
+                onClick={stopScan}
+                disabled={scanLoading}
+                className="btn btn-danger px-4 py-2"
+              >
+                <Square className="h-4 w-4 mr-2" />
+                Stop Scan
+              </button>
+              <button
+                onClick={forceReset}
+                disabled={scanLoading}
+                className="btn btn-warning px-4 py-2"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Force Reset
+              </button>
+            </>
           ) : (
             <button
               onClick={startScan}
@@ -206,6 +234,14 @@ const Dashboard: React.FC = () => {
               Start Scan
             </button>
           )}
+          <button
+            onClick={unlockDatabase}
+            disabled={scanLoading}
+            className="btn btn-secondary px-4 py-2"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Unlock DB
+          </button>
         </div>
       </div>
 
@@ -229,10 +265,9 @@ const Dashboard: React.FC = () => {
                     Current: {scanStatus.current_path}
                   </p>
                 )}
-                {/* Always show duration for debugging */}
+                {/* Show duration */}
                 <p className="text-xs text-blue-700 dark:text-blue-300">
-                  Duration: {scanStatus.scan_duration || scanStatus.elapsed_time_formatted || 'Unknown'} 
-                  (scan_duration: "{scanStatus.scan_duration}", elapsed_time_formatted: "{scanStatus.elapsed_time_formatted}")
+                  Duration: {scanStatus.scan_duration || scanStatus.elapsed_time_formatted || 'Unknown'}
                 </p>
                 {scanStatus.processing_rate && (
                   <p className="text-xs text-blue-700 dark:text-blue-300">
