@@ -120,10 +120,19 @@ class FileScanner:
             logger.info(f"Marked {len(running_scans)} existing running scans as failed")
         except Exception as e:
             logger.error(f"Error cleaning up old scans: {e}")
-            
+        
+        # Reset scanner state completely before starting new scan
+        self.scanning = False
+        self.stop_scan = False
+        self.current_scan = None
+        self.scan_start_time = None
+        self.current_path = None
+        
+        # Now set up for new scan
         self.scanning = True
         self.stop_scan = False
         self.scan_start_time = time.time()
+        logger.info(f"Set scan_start_time to: {self.scan_start_time}")
         
         # Create scan record
         self.current_scan = ScanRecord(
@@ -220,8 +229,23 @@ class FileScanner:
         if not self.current_scan:
             return {'status': 'idle'}
         
-        # Calculate elapsed time
-        elapsed_time = time.time() - self.scan_start_time if self.scan_start_time else 0
+        # Ensure we have the current scan record from database
+        try:
+            current_scan_from_db = ScanRecord.query.get(self.current_scan.id)
+            if current_scan_from_db and current_scan_from_db.status != 'running':
+                logger.warning(f"Scan {self.current_scan.id} status is {current_scan_from_db.status}, not running")
+                return {'status': 'idle'}
+        except Exception as e:
+            logger.warning(f"Error checking scan status from database: {e}")
+        
+        # Calculate elapsed time - add debugging
+        if self.scan_start_time is None:
+            logger.warning("scan_start_time is None - this should not happen during active scan")
+            elapsed_time = 0
+        else:
+            elapsed_time = time.time() - self.scan_start_time
+            logger.debug(f"Elapsed time calculation: {time.time()} - {self.scan_start_time} = {elapsed_time}")
+        
         current_path = getattr(self, 'current_path', 'Unknown')
         
         # Get current progress from in-memory variables (more accurate than database)
@@ -269,6 +293,9 @@ class FileScanner:
             'processing_rate': processing_rate,
             'scan_duration': scan_duration  # Ensure this is always set
         }
+        
+        # Add debugging information
+        logger.debug(f"Scan status response: elapsed_time={elapsed_time}, scan_duration='{scan_duration}', elapsed_time_formatted='{scan_duration}'")
         
         return response_data
     
