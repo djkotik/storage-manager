@@ -340,7 +340,7 @@ class FileScanner:
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
             logger.info(f"Appdata exclusion setting: {skip_appdata}")
             
-            # Function to check if a path should be excluded - ULTRA AGGRESSIVE
+            # Function to check if a path should be excluded - EXTREMELY AGGRESSIVE
             def should_exclude_path(path_str):
                  """Check if a path should be excluded from scanning"""
                  if not skip_appdata:
@@ -348,19 +348,25 @@ class FileScanner:
                  
                  path_lower = path_str.lower()
                  
-                 # ULTRA AGGRESSIVE appdata detection - check ANY part of the path
+                 # EXTREMELY AGGRESSIVE appdata detection - check ANY part of the path
                  path_parts = path_lower.split('/')
                  for part in path_parts:
+                     # Check for appdata variations
                      if 'appdata' in part or 'app_data' in part or 'app-data' in part:
                          logger.info(f"EXCLUDING appdata path (found in part '{part}'): {path_str}")
                          return True
                      
                      # Also exclude common problematic directories
-                     problematic_dirs = ['cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups', 'xteve', 'plex', 'emby', 'jellyfin']
+                     problematic_dirs = ['cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups', 'xteve', 'plex', 'emby', 'jellyfin', 'sonarr', 'radarr', 'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 'deluge', 'qbit', 'qbittorrent']
                      for problematic in problematic_dirs:
                          if problematic in part:
                              logger.info(f"EXCLUDING problematic directory (found in part '{part}'): {path_str}")
                              return True
+                 
+                 # Additional check: if the path contains 'appdata' anywhere, exclude it
+                 if 'appdata' in path_lower:
+                     logger.info(f"EXCLUDING appdata path (found anywhere in path): {path_str}")
+                     return True
                  
                  return False
             
@@ -426,6 +432,12 @@ class FileScanner:
                 logger.error(f"Starting path {self.data_path} is excluded - cannot scan")
                 raise Exception(f"Cannot scan excluded path: {self.data_path}")
             
+            # EXTRA CRITICAL: Double-check that we're not starting in an appdata directory
+            data_path_str = str(self.data_path).lower()
+            if 'appdata' in data_path_str:
+                logger.error(f"CRITICAL ERROR: Starting path contains appdata: {self.data_path}")
+                raise Exception(f"Cannot scan path containing appdata: {self.data_path}")
+            
             # Enhanced timeout and stuck detection - ULTRA AGGRESSIVE
             last_directory_time = time.time()
             directory_timeout = 15  # 15 seconds timeout per directory (reduced from 30)
@@ -454,6 +466,11 @@ class FileScanner:
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
+                
+                # CRITICAL: Double-check that we're not processing an appdata directory
+                if should_exclude_path(root):
+                    logger.error(f"CRITICAL: Somehow entered appdata directory: {root} - SKIPPING")
+                    continue
                 
                 # Check for directory timeout
                 current_time = time.time()
@@ -669,9 +686,9 @@ class FileScanner:
                     except:
                         pass
                 
-                # Update scan record more frequently to ensure data is saved (every 100 files or 5 seconds)
+                # Update scan record more frequently to ensure data is saved (every 50 files or 3 seconds)
                 current_time = time.time()
-                if (total_files % 100 == 0 or current_time - last_update_time > 5):
+                if (total_files % 50 == 0 or current_time - last_update_time > 3):
                     try:
                         # Update scan record with current progress
                         self.current_scan.total_files = total_files

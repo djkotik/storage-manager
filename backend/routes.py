@@ -1,9 +1,10 @@
 import os
 import shutil
 import logging
+import time
 from datetime import datetime, timedelta
 from flask import jsonify, request, send_file, current_app
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, text
 from scanner import FileScanner
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ def register_routes(app):
     def unlock_database():
         """Unlock database by cleaning up connections"""
         try:
-            logger.info("Database unlock requested via API")
+            logger.info("=== DATABASE UNLOCK REQUESTED ===")
             
             # Force cleanup of all database connections
             db.session.rollback()
@@ -108,12 +109,15 @@ def register_routes(app):
             time.sleep(2)
             
             # Test if database is now accessible
-            db.session.execute("SELECT 1")
+            db.session.execute(text("SELECT 1"))
+            db.session.commit()
             
-            return jsonify({'message': 'Database unlocked successfully'})
+            logger.info("Database unlocked and tested successfully")
+            return jsonify({'message': 'Database unlocked and tested successfully'})
         except Exception as e:
             logger.error(f"Error unlocking database: {e}")
-            return jsonify({'error': 'Failed to unlock database'}), 500
+            db.session.rollback()
+            return jsonify({'error': f'Failed to unlock database: {e}'}), 500
 
     @app.route('/api/scan/status')
     def get_scan_status():
