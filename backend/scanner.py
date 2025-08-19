@@ -340,26 +340,29 @@ class FileScanner:
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
             logger.info(f"Appdata exclusion setting: {skip_appdata}")
             
-            # Function to check if a path should be excluded - MORE AGGRESSIVE
+            # Function to check if a path should be excluded - ULTRA AGGRESSIVE
             def should_exclude_path(path_str):
-                """Check if a path should be excluded from scanning"""
-                if not skip_appdata:
-                    return False
-                
-                path_lower = path_str.lower()
-                # Check for appdata in the path - MORE AGGRESSIVE
-                if 'appdata' in path_lower or 'app_data' in path_lower or 'app-data' in path_lower:
-                    logger.info(f"EXCLUDING appdata path: {path_str}")
-                    return True
-                
-                # Also exclude common problematic directories
-                problematic_dirs = ['cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups']
-                for problematic in problematic_dirs:
-                    if problematic in path_lower:
-                        logger.info(f"EXCLUDING problematic directory: {path_str}")
-                        return True
-                
-                return False
+                 """Check if a path should be excluded from scanning"""
+                 if not skip_appdata:
+                     return False
+                 
+                 path_lower = path_str.lower()
+                 
+                 # ULTRA AGGRESSIVE appdata detection - check ANY part of the path
+                 path_parts = path_lower.split('/')
+                 for part in path_parts:
+                     if 'appdata' in part or 'app_data' in part or 'app-data' in part:
+                         logger.info(f"EXCLUDING appdata path (found in part '{part}'): {path_str}")
+                         return True
+                     
+                     # Also exclude common problematic directories
+                     problematic_dirs = ['cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups', 'xteve', 'plex', 'emby', 'jellyfin']
+                     for problematic in problematic_dirs:
+                         if problematic in part:
+                             logger.info(f"EXCLUDING problematic directory (found in part '{part}'): {path_str}")
+                             return True
+                 
+                 return False
             
             # COMPLETE REWRITE: Simple and robust directory walker that completely avoids appdata
             def safe_directory_walk(start_path):
@@ -423,11 +426,11 @@ class FileScanner:
                 logger.error(f"Starting path {self.data_path} is excluded - cannot scan")
                 raise Exception(f"Cannot scan excluded path: {self.data_path}")
             
-            # Enhanced timeout and stuck detection - MORE AGGRESSIVE
+            # Enhanced timeout and stuck detection - ULTRA AGGRESSIVE
             last_directory_time = time.time()
-            directory_timeout = 30  # 30 seconds timeout per directory (reduced from 60)
+            directory_timeout = 15  # 15 seconds timeout per directory (reduced from 30)
             last_heartbeat = time.time()
-            heartbeat_interval = 15  # Log heartbeat every 15 seconds (reduced from 30)
+            heartbeat_interval = 10  # Log heartbeat every 10 seconds (reduced from 15)
             last_path = None
             last_path_change = time.time()
             
@@ -437,10 +440,10 @@ class FileScanner:
             
             # Track progress logging
             last_progress_log = time.time()
-            progress_log_interval = 30  # Log progress every 30 seconds (reduced from 60)
+            progress_log_interval = 20  # Log progress every 20 seconds (reduced from 30)
             
-            # Track stuck detection - MORE AGGRESSIVE
-            stuck_timeout = 60  # 1 minute without path change (reduced from 5 minutes)
+            # Track stuck detection - ULTRA AGGRESSIVE
+            stuck_timeout = 30  # 30 seconds without path change (reduced from 60)
             
             # Database cleanup tracking
             last_db_cleanup = time.time()
@@ -491,7 +494,7 @@ class FileScanner:
                         continue
                 
                 # Force skip any directory that has been processing for too long (emergency escape)
-                if current_time - last_directory_time > 30:  # 30 seconds per directory max (reduced from 60)
+                if current_time - last_directory_time > 15:  # 15 seconds per directory max (reduced from 30)
                     logger.error(f"Directory processing timeout exceeded: {root} - forcing skip")
                     dirs.clear()
                     files.clear()
@@ -666,9 +669,9 @@ class FileScanner:
                     except:
                         pass
                 
-                # Update scan record less frequently to reduce database contention (every 500 files or 10 seconds)
+                # Update scan record more frequently to ensure data is saved (every 100 files or 5 seconds)
                 current_time = time.time()
-                if (total_files % 500 == 0 or current_time - last_update_time > 10):
+                if (total_files % 100 == 0 or current_time - last_update_time > 5):
                     try:
                         # Update scan record with current progress
                         self.current_scan.total_files = total_files
