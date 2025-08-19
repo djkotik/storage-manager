@@ -173,17 +173,30 @@ class FileScanner:
         self.scanning = False
         self.current_scan = None
         
-        # Force stop any running scans in database
-        try:
-            running_scans = ScanRecord.query.filter_by(status='running').all()
-            for scan in running_scans:
-                scan.status = 'failed'
-                scan.error_message = 'Force reset by user'
-                scan.end_time = datetime.utcnow()
-            db.session.commit()
-            logger.info(f"Force reset {len(running_scans)} running scans in database")
-        except Exception as e:
-            logger.error(f"Error force resetting scans: {e}")
+        # Force stop any running scans in database with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                running_scans = ScanRecord.query.filter_by(status='running').all()
+                for scan in running_scans:
+                    scan.status = 'failed'
+                    scan.error_message = 'Force reset by user'
+                    scan.end_time = datetime.utcnow()
+                db.session.commit()
+                logger.info(f"Force reset {len(running_scans)} running scans in database")
+                break
+            except Exception as e:
+                logger.warning(f"Database reset attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    try:
+                        db.session.rollback()
+                        db.session.close()
+                        db.session.remove()
+                        time.sleep(2)
+                    except:
+                        pass
+                else:
+                    logger.error(f"Failed to reset database after {max_retries} attempts")
         
         # Reset all state variables
         self.scan_start_time = None
@@ -191,17 +204,27 @@ class FileScanner:
         
         logger.info("Scanner state reset complete")
 
+    def cleanup_database_connections(self):
+        """Clean up database connections to prevent locking issues"""
+        try:
+            logger.info("Cleaning up database connections...")
+            db.session.rollback()
+            db.session.close()
+            db.session.remove()
+            logger.info("Database connections cleaned up")
+        except Exception as e:
+            logger.warning(f"Error cleaning up database connections: {e}")
+
     def get_scan_status(self) -> Dict:
         """Get current scan status"""
         if not self.current_scan:
             return {'status': 'idle'}
         
-        # Calculate elapsed time and estimated completion
+        # Calculate elapsed time
         elapsed_time = time.time() - self.scan_start_time if self.scan_start_time else 0
         current_path = getattr(self, 'current_path', 'Unknown')
         
         # Get current progress from in-memory variables (more accurate than database)
-        # These are updated in real-time during scanning
         total_files = getattr(self, '_total_files', self.current_scan.total_files or 0)
         total_directories = getattr(self, '_total_directories', self.current_scan.total_directories or 0)
         total_size = getattr(self, '_total_size', self.current_scan.total_size or 0)
@@ -224,13 +247,10 @@ class FileScanner:
                 estimated_total_time = elapsed_time / (progress_percentage / 100)
                 estimated_remaining = estimated_total_time - elapsed_time
                 estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
-            
-        # Calculate scan duration
-        scan_duration = self._format_duration(elapsed_time)
-        logger.info(f"SCAN DURATION: {scan_duration} (elapsed_time={elapsed_time:.1f}s)")
-        logger.info(f"CURRENT PROGRESS: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)}")
         
-        # Debug: Log what we're returning
+        # Format scan duration for display
+        scan_duration = self._format_duration(elapsed_time)
+        
         response_data = {
             'scan_id': self.current_scan.id,
             'status': self.current_scan.status,
@@ -242,14 +262,13 @@ class FileScanner:
             'total_size_formatted': format_size(total_size),
             'scanning': self.scanning,
             'elapsed_time': elapsed_time,
-            'elapsed_time_formatted': self._format_duration(elapsed_time),
+            'elapsed_time_formatted': scan_duration,
             'current_path': current_path,
             'estimated_completion': estimated_completion.isoformat() if estimated_completion else None,
             'progress_percentage': progress_percentage,
             'processing_rate': processing_rate,
-            'scan_duration': scan_duration
+            'scan_duration': scan_duration  # Ensure this is always set
         }
-        logger.info(f"RETURNING TO FRONTEND: scan_duration='{scan_duration}', elapsed_time_formatted='{self._format_duration(elapsed_time)}'")
         
         return response_data
     
@@ -258,20 +277,21 @@ class FileScanner:
         if seconds < 60:
             return f"{seconds:.0f}s"
         elif seconds < 3600:
-            minutes = seconds / 60
-            return f"{minutes:.0f}m {seconds % 60:.0f}s"
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{minutes}m {secs}s"
         else:
-            hours = seconds / 3600
-            minutes = (seconds % 3600) / 60
-            return f"{hours:.0f}h {minutes:.0f}m"
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours}h {minutes}m"
 
     def _scan_filesystem(self):
         """Main scanning method with proper appdata exclusion"""
         logger.info(f"=== SCANNER THREAD STARTED ===")
         logger.info(f"Thread ID: {threading.current_thread().ident}")
         logger.info(f"Starting filesystem scan of {self.data_path}")
+        
         try:
-            
             total_files = 0
             total_directories = 0
             total_size = 0
@@ -289,67 +309,39 @@ class FileScanner:
             # Clear old file records for this scan
             FileRecord.query.filter_by(scan_id=self.current_scan.id).delete()
             
-            # Enhanced timeout and stuck detection
-            last_directory_time = time.time()
-            directory_timeout = 120  # 2 minutes timeout per directory (reduced from 5)
-            last_heartbeat = time.time()
-            heartbeat_interval = 30  # Log heartbeat every 30 seconds
-            last_path = None
-            last_path_change = time.time()
-            
-            # Add overall scan timeout protection
-            scan_start_time = time.time()
-            max_scan_time = self.max_duration * 3600  # Convert hours to seconds
-            
-            # Track progress logging
-            last_progress_log = time.time()
-            progress_log_interval = 60  # Log progress every minute
-            
-            # Track stuck detection
-            last_path_change = time.time()
-            stuck_timeout = 600  # 10 minutes without path change
-            last_path = None
-            
-            # Debug: Check appdata setting at start
-            skip_appdata_setting = get_setting('skip_appdata', 'true')
-            logger.info(f"Appdata exclusion setting: {skip_appdata_setting}")
-            
-            # Pre-filter directories to exclude appdata if setting is enabled
+            # Get appdata exclusion setting
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
-            logger.info(f"skip_appdata variable value: {skip_appdata}")
-            if skip_appdata:
-                logger.info("Appdata exclusion enabled - will skip all appdata directories")
-            else:
-                logger.warning("Appdata exclusion DISABLED - will scan appdata directories")
+            logger.info(f"Appdata exclusion setting: {skip_appdata}")
             
-            # Function to check if a path should be excluded
-            def should_exclude_path(path):
+            # Function to check if a path should be excluded - MORE AGGRESSIVE
+            def should_exclude_path(path_str):
                 """Check if a path should be excluded from scanning"""
                 if not skip_appdata:
                     return False
                 
-                path_lower = path.lower()
-                # Check for appdata in the path
-                if 'appdata' in path_lower:
-                    logger.info(f"EXCLUDING appdata path: {path}")
+                path_lower = path_str.lower()
+                # Check for appdata in the path - MORE AGGRESSIVE
+                if 'appdata' in path_lower or 'app_data' in path_lower or 'app-data' in path_lower:
+                    logger.info(f"EXCLUDING appdata path: {path_str}")
                     return True
+                
+                # Also exclude common problematic directories
+                problematic_dirs = ['cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups']
+                for problematic in problematic_dirs:
+                    if problematic in path_lower:
+                        logger.info(f"EXCLUDING problematic directory: {path_str}")
+                        return True
                 
                 return False
             
-            # COMPLETE REWRITE: Simple and robust directory walker
-            def safe_walk(path):
-                """Simple directory walker that completely avoids appdata"""
-                def should_skip_directory(dir_path):
-                    """Check if directory should be skipped"""
-                    if not skip_appdata:
-                        return False
-                    return 'appdata' in dir_path.lower()
-                
+            # COMPLETE REWRITE: Simple and robust directory walker that completely avoids appdata
+            def safe_directory_walk(start_path):
+                """Custom directory walker that completely skips appdata directories"""
                 def walk_recursive(current_path):
                     """Recursive walker that skips appdata"""
                     try:
                         # Skip if this is an appdata directory
-                        if should_skip_directory(current_path):
+                        if should_exclude_path(str(current_path)):
                             logger.info(f"SKIPPING appdata directory: {current_path}")
                             return
                         
@@ -366,13 +358,13 @@ class FileScanner:
                         dirs = []
                         files = []
                         
-                        # Separate files and directories
+                        # Separate files and directories, filtering out appdata
                         for item in items:
                             item_path = os.path.join(current_path, item)
                             try:
                                 if os.path.isdir(item_path):
                                     # Check if this subdirectory should be skipped
-                                    if should_skip_directory(item_path):
+                                    if should_exclude_path(item_path):
                                         logger.info(f"SKIPPING appdata subdirectory: {item_path}")
                                         continue
                                     dirs.append(item)
@@ -389,7 +381,7 @@ class FileScanner:
                         for dir_name in dirs:
                             subdir_path = os.path.join(current_path, dir_name)
                             # Double-check before recursion
-                            if not should_skip_directory(subdir_path):
+                            if not should_exclude_path(subdir_path):
                                 yield from walk_recursive(subdir_path)
                             else:
                                 logger.info(f"PREVENTING recursion into appdata: {subdir_path}")
@@ -397,15 +389,38 @@ class FileScanner:
                     except Exception as e:
                         logger.error(f"Error in walk_recursive for {current_path}: {e}")
                 
-                return walk_recursive(path)
+                return walk_recursive(start_path)
             
             # CRITICAL: Check if the starting path itself should be excluded
             if should_exclude_path(str(self.data_path)):
                 logger.error(f"Starting path {self.data_path} is excluded - cannot scan")
                 raise Exception(f"Cannot scan excluded path: {self.data_path}")
             
-            # Main scanning loop using custom safe_walk
-            for root, dirs, files in safe_walk(self.data_path):
+            # Enhanced timeout and stuck detection - MORE AGGRESSIVE
+            last_directory_time = time.time()
+            directory_timeout = 30  # 30 seconds timeout per directory (reduced from 60)
+            last_heartbeat = time.time()
+            heartbeat_interval = 15  # Log heartbeat every 15 seconds (reduced from 30)
+            last_path = None
+            last_path_change = time.time()
+            
+            # Add overall scan timeout protection
+            scan_start_time = time.time()
+            max_scan_time = self.max_duration * 3600  # Convert hours to seconds
+            
+            # Track progress logging
+            last_progress_log = time.time()
+            progress_log_interval = 30  # Log progress every 30 seconds (reduced from 60)
+            
+            # Track stuck detection - MORE AGGRESSIVE
+            stuck_timeout = 60  # 1 minute without path change (reduced from 5 minutes)
+            
+            # Database cleanup tracking
+            last_db_cleanup = time.time()
+            db_cleanup_interval = 300  # Clean up database connections every 5 minutes
+            
+            # Main scanning loop using custom safe_directory_walk
+            for root, dirs, files in safe_directory_walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
@@ -414,7 +429,9 @@ class FileScanner:
                 current_time = time.time()
                 if current_time - last_directory_time > directory_timeout:
                     logger.error(f"Directory timeout: {root} has been processing for {directory_timeout} seconds")
-                    raise Exception(f"Directory processing timeout: {root}")
+                    # Force skip this directory and continue
+                    logger.info(f"FORCED SKIP of timeout directory: {root}")
+                    continue
                 last_directory_time = current_time
                     
                 # Track current path for progress reporting
@@ -428,6 +445,7 @@ class FileScanner:
                     
                     # Log progress every 1000 directories
                     if total_directories % 1000 == 0:
+                        elapsed_time = current_time - self.scan_start_time
                         logger.info(f"=== SCAN PROGRESS ===")
                         logger.info(f"Files processed: {total_files:,}")
                         logger.info(f"Directories processed: {total_directories:,}")
@@ -436,7 +454,6 @@ class FileScanner:
                         logger.info(f"Elapsed time: {self._format_duration(elapsed_time)}")
                 else:
                     # Check for stuck detection - shorter timeout
-                    stuck_timeout = 30  # 30 seconds timeout for stuck detection (reduced from 60)
                     if current_time - last_path_change > stuck_timeout:
                         logger.error(f"SCAN STUCK: {root} has been processing for {current_time - last_path_change:.0f} seconds")
                         logger.error(f"Files in current directory: {len(files)}, Subdirectories: {len(dirs)}")
@@ -447,7 +464,7 @@ class FileScanner:
                         continue
                 
                 # Force skip any directory that has been processing for too long (emergency escape)
-                if current_time - last_directory_time > 120:  # 2 minutes per directory max
+                if current_time - last_directory_time > 30:  # 30 seconds per directory max (reduced from 60)
                     logger.error(f"Directory processing timeout exceeded: {root} - forcing skip")
                     dirs.clear()
                     files.clear()
@@ -457,7 +474,19 @@ class FileScanner:
                 # Log current directory being processed with detailed info
                 logger.info(f"Processing directory: {root} (contains {len(dirs)} subdirs, {len(files)} files)")
                 
-                # Warn about very large directories that might cause delays
+                # Skip very large directories that might cause delays
+                if len(files) > 50000:
+                    logger.warning(f"SKIPPING extremely large directory: {root} contains {len(files):,} files - skipping to avoid delays")
+                    dirs.clear()
+                    files.clear()
+                    continue
+                if len(dirs) > 5000:
+                    logger.warning(f"SKIPPING extremely deep directory: {root} contains {len(dirs):,} subdirectories - skipping to avoid delays")
+                    dirs.clear()
+                    files.clear()
+                    continue
+                
+                # Warn about large directories that might cause delays
                 if len(files) > 10000:
                     logger.warning(f"Large directory detected: {root} contains {len(files):,} files - this may take a while")
                 if len(dirs) > 1000:
@@ -465,7 +494,8 @@ class FileScanner:
                 
                 # Heartbeat log every 30 seconds
                 if current_time - last_heartbeat > heartbeat_interval:
-                    logger.info(f"Scan heartbeat: Still processing {root} (total: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)})")
+                    elapsed_time = current_time - self.scan_start_time
+                    logger.info(f"Scan heartbeat: Still processing {root} (total: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)}, elapsed: {self._format_duration(elapsed_time)})")
                     last_heartbeat = current_time
                     
                 # Check if we've exceeded max duration
@@ -548,7 +578,7 @@ class FileScanner:
                     except (OSError, PermissionError) as e:
                         logger.warning(f"Error accessing file {file_path}: {e}")
                 
-                # Commit batches to database
+                # Commit batches to database with improved error handling
                 try:
                     # Add directory batch
                     if dir_batch:
@@ -560,25 +590,54 @@ class FileScanner:
                         db.session.bulk_save_objects(file_batch)
                         logger.info(f"Committed {len(file_batch)} files to database")
                     
-                    # Commit the batch
-                    db.session.commit()
+                    # Commit the batch with retry logic
+                    max_retries = 3
+                    retry_count = 0
+                    committed = False
                     
-                except Exception as e:
-                    logger.error(f"Error committing batch to database: {e}")
-                    try:
-                        db.session.rollback()
-                        # If database is locked, wait and retry
-                        if "database is locked" in str(e):
-                            logger.info("Database locked, waiting 2 seconds before retry")
-                            time.sleep(2)
-                            # Retry the commit
+                    while retry_count < max_retries and not committed:
+                        try:
                             db.session.commit()
-                    except Exception as retry_error:
-                        logger.error(f"Retry failed: {retry_error}")
-                        # Clear the session and continue
+                            committed = True
+                            logger.info(f"Successfully committed batch to database")
+                        except Exception as commit_error:
+                            retry_count += 1
+                            logger.warning(f"Database commit attempt {retry_count} failed: {commit_error}")
+                            
+                            if "database is locked" in str(commit_error) or "QueuePool limit" in str(commit_error):
+                                # Wait longer between retries for database locks
+                                wait_time = retry_count * 3  # 3, 6, 9 seconds
+                                logger.info(f"Database locked, waiting {wait_time} seconds before retry {retry_count}")
+                                time.sleep(wait_time)
+                                
+                                # Force session cleanup
+                                try:
+                                    db.session.rollback()
+                                    db.session.close()
+                                    db.session.remove()
+                                    # Small delay to let database settle
+                                    time.sleep(1)
+                                except:
+                                    pass
+                            else:
+                                # For other errors, don't retry
+                                break
+                    
+                    if not committed:
+                        logger.error(f"Failed to commit batch after {max_retries} attempts - skipping batch")
+                        # Clear the batches to avoid memory buildup
+                        dir_batch.clear()
+                        file_batch.clear()
+                        
+                except Exception as e:
+                    logger.error(f"Error preparing batch for database: {e}")
+                    # Clear the session and continue
+                    try:
                         db.session.rollback()
                         db.session.close()
                         db.session.remove()
+                    except:
+                        pass
                 
                 # Update scan record less frequently to reduce database contention (every 500 files or 10 seconds)
                 current_time = time.time()
@@ -588,36 +647,72 @@ class FileScanner:
                         self.current_scan.total_files = total_files
                         self.current_scan.total_directories = total_directories
                         self.current_scan.total_size = total_size
-                        db.session.commit()
                         
-                        last_update_time = current_time
-                        logger.info(f"Processed {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
+                        # Commit with retry logic for scan record updates
+                        max_retries = 3
+                        retry_count = 0
+                        committed = False
+                        
+                        while retry_count < max_retries and not committed:
+                            try:
+                                db.session.commit()
+                                committed = True
+                                last_update_time = current_time
+                                elapsed_time = current_time - self.scan_start_time
+                                logger.info(f"Processed {total_files:,} files, {total_directories:,} directories, {format_size(total_size)} in {self._format_duration(elapsed_time)}")
+                            except Exception as commit_error:
+                                retry_count += 1
+                                logger.warning(f"Scan record update attempt {retry_count} failed: {commit_error}")
+                                
+                                if "database is locked" in str(commit_error) or "QueuePool limit" in str(commit_error):
+                                    # Wait between retries
+                                    wait_time = retry_count * 2  # 2, 4, 6 seconds
+                                    logger.info(f"Database locked during scan update, waiting {wait_time} seconds before retry {retry_count}")
+                                    time.sleep(wait_time)
+                                    
+                                    # Force session cleanup
+                                    try:
+                                        db.session.rollback()
+                                        db.session.close()
+                                        db.session.remove()
+                                        time.sleep(1)
+                                    except:
+                                        pass
+                                else:
+                                    # For other errors, don't retry
+                                    break
+                        
+                        if not committed:
+                            logger.error(f"Failed to update scan record after {max_retries} attempts - continuing scan")
+                            
                     except Exception as e:
                         logger.error(f"Error updating scan progress: {e}")
                         # Try to recover from database errors
                         try:
                             db.session.rollback()
-                            # Force a new connection if we hit pool limits
-                            if "database is locked" in str(e) or "QueuePool limit" in str(e) or "connection timed out" in str(e):
-                                logger.info("Database locked/pool exhausted, forcing connection refresh")
-                                db.session.close()
-                                db.session.remove()
-                                # Wait a moment before retrying
-                                time.sleep(1)
+                            db.session.close()
+                            db.session.remove()
                         except:
                             pass
                 
                 # Log progress every 100 directories for better visibility
                 if total_directories % 100 == 0:
-                    logger.info(f"Processed {total_directories:,} directories so far")
+                    elapsed_time = current_time - self.scan_start_time
+                    logger.info(f"Processed {total_directories:,} directories so far in {self._format_duration(elapsed_time)}")
                 
                 # Log detailed progress every minute
                 if current_time - last_progress_log > progress_log_interval:
                     elapsed_time = current_time - self.scan_start_time
                     rate_files = total_files / elapsed_time if elapsed_time > 0 else 0
                     rate_dirs = total_directories / elapsed_time if elapsed_time > 0 else 0
-                    logger.info(f"Progress update: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)} in {elapsed_time:.0f}s ({rate_files:.1f} files/s, {rate_dirs:.1f} dirs/s)")
+                    logger.info(f"Progress update: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)} in {self._format_duration(elapsed_time)} ({rate_files:.1f} files/s, {rate_dirs:.1f} dirs/s)")
                     last_progress_log = current_time
+                
+                # Periodic database cleanup to prevent connection buildup
+                if current_time - last_db_cleanup > db_cleanup_interval:
+                    logger.info("Performing periodic database cleanup...")
+                    self.cleanup_database_connections()
+                    last_db_cleanup = current_time
             
             # Final commit
             db.session.commit()
@@ -633,7 +728,8 @@ class FileScanner:
             # Record storage history
             self._record_storage_history(total_size, total_files, total_directories)
             
-            logger.info(f"Scan completed: {total_files} files, {total_directories} directories, {total_size} bytes")
+            elapsed_time = time.time() - self.scan_start_time
+            logger.info(f"Scan completed: {total_files} files, {total_directories} directories, {total_size} bytes in {self._format_duration(elapsed_time)}")
             
         except Exception as e:
             logger.error(f"Scan failed: {e}")
@@ -652,11 +748,6 @@ class FileScanner:
     def _extract_media_metadata(self, file_record: FileRecord, file_path: Path):
         """Extract metadata from media files"""
         try:
-            # Try to extract metadata using mutagen
-            # media_file = MutagenFile(str(file_path))
-            # if not media_file:
-            #     return
-                
             # Determine media type and extract basic info
             extension = file_path.suffix.lower()
             filename = file_path.stem
@@ -707,10 +798,6 @@ class FileScanner:
                 if pattern.lower() in filename.lower():
                     audio_codec = pattern
                     break
-            
-            # Try to get runtime from metadata
-            # if hasattr(media_file, 'info') and hasattr(media_file.info, 'length'):
-            #     runtime = int(media_file.info.length / 60)  # Convert to minutes
             
             # Create media file record
             media_record = MediaFile(

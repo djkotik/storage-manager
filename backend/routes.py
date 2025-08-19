@@ -90,6 +90,31 @@ def register_routes(app):
             logger.error(f"Error force resetting scanner: {e}")
             return jsonify({'error': 'Failed to force reset scanner'}), 500
 
+    @app.route('/api/database/unlock', methods=['POST'])
+    def unlock_database():
+        """Unlock database by cleaning up connections"""
+        try:
+            logger.info("Database unlock requested via API")
+            
+            # Force cleanup of all database connections
+            db.session.rollback()
+            db.session.close()
+            db.session.remove()
+            
+            # Force engine cleanup
+            db.engine.dispose()
+            
+            # Wait a moment for cleanup
+            time.sleep(2)
+            
+            # Test if database is now accessible
+            db.session.execute("SELECT 1")
+            
+            return jsonify({'message': 'Database unlocked successfully'})
+        except Exception as e:
+            logger.error(f"Error unlocking database: {e}")
+            return jsonify({'error': 'Failed to unlock database'}), 500
+
     @app.route('/api/scan/status')
     def get_scan_status():
         """Get current scan status"""
