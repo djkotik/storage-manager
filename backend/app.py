@@ -206,18 +206,20 @@ def run_scheduled_scan():
         scanner = FileScanner(data_path, max_duration=max_duration)
         
         def run_scheduled_scanner():
-            try:
-                # Update the scan record to use our new scanner
-                scanner.current_scan = scan_record
-                scanner.scanning = True
-                scanner._scan_filesystem()
-            except Exception as e:
-                logger.error(f"Scheduled scanner error: {e}")
-                # Mark scan as failed
-                scan_record.status = 'failed'
-                scan_record.error_message = str(e)
-                scan_record.end_time = datetime.now()
-                db.session.commit()
+            # CRITICAL: Set up Flask application context for database operations
+            with app.app_context():
+                try:
+                    # Update the scan record to use our new scanner
+                    scanner.current_scan = scan_record
+                    scanner.scanning = True
+                    scanner._scan_filesystem()
+                except Exception as e:
+                    logger.error(f"Scheduled scanner error: {e}")
+                    # Mark scan as failed
+                    scan_record.status = 'failed'
+                    scan_record.error_message = str(e)
+                    scan_record.end_time = datetime.now()
+                    db.session.commit()
         
         scan_thread = threading.Thread(target=run_scheduled_scanner)
         scan_thread.daemon = True
@@ -1456,18 +1458,20 @@ def start_scan():
         scanner = FileScanner(data_path, max_duration=6)
         
         def run_new_scanner():
-            try:
-                # Update the scan record to use our new scanner
-                scanner.current_scan = scan_record
-                scanner.scanning = True
-                scanner._scan_filesystem()
-            except Exception as e:
-                logger.error(f"Scanner error: {e}")
-                # Mark scan as failed
-                scan_record.status = 'failed'
-                scan_record.error_message = str(e)
-                scan_record.end_time = datetime.now()
-                db.session.commit()
+            # CRITICAL: Set up Flask application context for database operations
+            with app.app_context():
+                try:
+                    # Update the scan record to use our new scanner
+                    scanner.current_scan = scan_record
+                    scanner.scanning = True
+                    scanner._scan_filesystem()
+                except Exception as e:
+                    logger.error(f"Scanner error: {e}")
+                    # Mark scan as failed
+                    scan_record.status = 'failed'
+                    scan_record.error_message = str(e)
+                    scan_record.end_time = datetime.now()
+                    db.session.commit()
         
         scan_thread = threading.Thread(target=run_new_scanner)
         scan_thread.daemon = True

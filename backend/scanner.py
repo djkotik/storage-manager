@@ -431,6 +431,11 @@ class FileScanner:
             logger.error("🚨 STARTING BULLETPROOF SCAN WITH APPDATA EXCLUSION v1.7.2+ 🚨")
             logger.error(f"🚨 SCANNER VERSION CHECK: This should show if container is updated")
             
+            # CRITICAL: Initialize scan_start_time if not already set
+            if self.scan_start_time is None:
+                self.scan_start_time = time.time()
+                logger.info(f"Initialized scan_start_time to: {self.scan_start_time}")
+            
             # Get all top-level shares/directories
             try:
                 top_level_items = os.listdir(self.data_path)
