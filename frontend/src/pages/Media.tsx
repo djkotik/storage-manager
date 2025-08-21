@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Search, Filter, File, Folder, Calendar } from 'lucide-react'
+import { Search, Filter, File, Folder, Calendar, FileText, Image, Film, Music, Archive, Code } from 'lucide-react'
 import axios from 'axios'
 
 interface FileRecord {
@@ -64,22 +64,59 @@ const Files: React.FC = () => {
       return <Folder className="h-5 w-5 text-blue-500" />
     }
     
-    // File type icons based on extension
-    const videoExts = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.mts']
-    const audioExts = ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a', '.wma']
-    const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp']
-    const docExts = ['.pdf', '.doc', '.docx', '.txt', '.rtf']
+    const ext = extension.toLowerCase()
     
-    if (videoExts.includes(extension.toLowerCase())) {
-      return <File className="h-5 w-5 text-red-500" />
-    } else if (audioExts.includes(extension.toLowerCase())) {
-      return <File className="h-5 w-5 text-green-500" />
-    } else if (imageExts.includes(extension.toLowerCase())) {
-      return <File className="h-5 w-5 text-purple-500" />
-    } else if (docExts.includes(extension.toLowerCase())) {
-      return <File className="h-5 w-5 text-blue-500" />
-    } else {
-      return <File className="h-5 w-5 text-gray-500" />
+    switch (ext) {
+      case '.jpg':
+      case '.jpeg':
+      case '.png':
+      case '.gif':
+      case '.bmp':
+      case '.svg':
+      case '.webp':
+      case '.tiff':
+        return <Image className="h-5 w-5 text-blue-500" />
+      case '.mp4':
+      case '.avi':
+      case '.mkv':
+      case '.mov':
+      case '.wmv':
+      case '.flv':
+      case '.webm':
+      case '.m4v':
+      case '.ts':
+      case '.mts':
+        return <Film className="h-5 w-5 text-purple-500" />
+      case '.mp3':
+      case '.wav':
+      case '.flac':
+      case '.aac':
+      case '.ogg':
+      case '.m4a':
+      case '.wma':
+        return <Music className="h-5 w-5 text-green-500" />
+      case '.zip':
+      case '.rar':
+      case '.7z':
+      case '.tar':
+      case '.gz':
+        return <Archive className="h-5 w-5 text-orange-500" />
+      case '.txt':
+      case '.pdf':
+      case '.doc':
+      case '.docx':
+      case '.rtf':
+        return <FileText className="h-5 w-5 text-red-500" />
+      case '.js':
+      case '.ts':
+      case '.py':
+      case '.cpp':
+      case '.java':
+      case '.html':
+      case '.css':
+        return <Code className="h-5 w-5 text-yellow-500" />
+      default:
+        return <File className="h-5 w-5 text-gray-500" />
     }
   }
 
@@ -182,8 +219,8 @@ const Files: React.FC = () => {
         </div>
       </div>
 
-      {/* Files Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Files Grid - Responsive with better screen utilization */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
         {loading ? (
           Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="card p-4 animate-pulse">
@@ -206,7 +243,22 @@ const Files: React.FC = () => {
           </div>
         ) : (
           files.map((file) => (
-            <div key={file.id} className="card p-4 hover:shadow-lg transition-shadow">
+            <div 
+              key={file.id} 
+              className="card p-4 hover:shadow-lg transition-all duration-200 hover:scale-[1.02] group cursor-pointer relative"
+              title={`${file.name}\nPath: ${file.path}\nSize: ${file.size_formatted}\nModified: ${formatDate(file.modified_time)}`}
+            >
+              {/* Hover tooltip */}
+              <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none transition-opacity duration-200 z-10 whitespace-nowrap">
+                <div className="max-w-xs">
+                  <div className="font-semibold">{file.name}</div>
+                  <div className="text-gray-300">{file.path}</div>
+                  <div className="text-gray-300">Size: {file.size_formatted}</div>
+                  <div className="text-gray-300">Modified: {formatDate(file.modified_time)}</div>
+                </div>
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+              </div>
+              
               <div className="flex items-center justify-between mb-3">
                 {getFileIcon(file.is_directory, file.extension)}
                 <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
@@ -214,7 +266,7 @@ const Files: React.FC = () => {
                 </span>
               </div>
               
-              <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm leading-tight">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm leading-tight line-clamp-2">
                 {file.name}
               </h3>
               

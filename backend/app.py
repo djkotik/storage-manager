@@ -102,6 +102,32 @@ db = SQLAlchemy(app)
 CORS(app)
 
 # Enable SQLite WAL mode for better concurrency
+def check_stuck_scans_on_startup():
+    """Check for scans that are still marked as running and mark them as failed"""
+    try:
+        logger.info("Checking for stuck scans from previous sessions...")
+        
+        # Find any scans still marked as 'running'
+        stuck_scans = ScanRecord.query.filter(ScanRecord.status == 'running').all()
+        
+        if stuck_scans:
+            logger.warning(f"Found {len(stuck_scans)} stuck scans from previous sessions")
+            
+            for scan in stuck_scans:
+                logger.warning(f"Marking stuck scan {scan.id} as failed (started: {scan.start_time})")
+                scan.status = 'failed'
+                scan.end_time = datetime.now()
+                scan.error_message = 'Scan was interrupted by container restart'
+                
+            db.session.commit()
+            logger.info(f"Marked {len(stuck_scans)} stuck scans as failed")
+        else:
+            logger.info("No stuck scans found")
+            
+    except Exception as e:
+        logger.error(f"Error checking for stuck scans: {e}")
+        db.session.rollback()
+
 def enable_wal_mode():
     """Enable WAL mode for better database concurrency"""
     try:
@@ -2215,7 +2241,7 @@ def get_analytics_stats():
 
 @app.route('/api/analytics/history')
 def get_storage_history():
-    """Get storage usage history from all completed scans"""
+    """Get storage usage history from all completed scans with enhanced timing info"""
     try:
         days = request.args.get('days', 30, type=int)
         end_date = datetime.now()
@@ -2251,12 +2277,24 @@ def get_storage_history():
         for scan in completed_scans:
             scan_date = scan.start_time.date()
             if scan_date not in history_data:
+                duration = None
+                if scan.end_time and scan.start_time:
+                    duration_seconds = (scan.end_time - scan.start_time).total_seconds()
+                    hours = int(duration_seconds // 3600)
+                    minutes = int((duration_seconds % 3600) // 60)
+                    seconds = int(duration_seconds % 60)
+                    duration = f"{hours}:{minutes:02d}:{seconds:02d}"
+                
                 history_data[scan_date] = {
                     'date': scan.start_time.isoformat(),
+                    'start_time': scan.start_time.isoformat(),
+                    'end_time': scan.end_time.isoformat() if scan.end_time else None,
+                    'duration': duration,
                     'total_size': scan.total_size,
                     'total_size_formatted': format_size(scan.total_size),
                     'file_count': scan.total_files,
-                    'directory_count': scan.total_directories
+                    'directory_count': scan.total_directories,
+                    'status': scan.status
                 }
         
         # Convert to sorted list
@@ -3073,6 +3111,9 @@ if __name__ == '__main__':
                 set_setting('max_shares_to_scan', '0')
             
             logger.info("Default settings initialized")
+            
+            # Check for stuck scans on startup
+            check_stuck_scans_on_startup()
             
             # Setup and start scheduled scan
             setup_scheduled_scan()

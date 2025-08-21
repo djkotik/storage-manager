@@ -255,46 +255,7 @@ def register_routes(app):
             logger.error(f"Error getting file tree: {e}")
             return jsonify({'error': 'Failed to get file tree'}), 500
 
-    @app.route('/api/analytics/overview')
-    def get_analytics_overview():
-        """Get storage analytics overview"""
-        try:
-            # Get total stats
-            total_files = FileRecord.query.filter_by(is_directory=False).count()
-            total_directories = FileRecord.query.filter_by(is_directory=True).count()
-            total_size = db.session.query(func.sum(FileRecord.size)).scalar() or 0
-            
-            # Get top file types
-            top_extensions = db.session.query(
-                FileRecord.extension,
-                func.count(FileRecord.id).label('count'),
-                func.sum(FileRecord.size).label('total_size')
-            ).filter(
-                FileRecord.extension.isnot(None),
-                FileRecord.is_directory == False
-            ).group_by(FileRecord.extension).order_by(
-                desc(func.sum(FileRecord.size))
-            ).limit(10).all()
-            
-            # Get media breakdown
-            media_files = MediaFile.query.count()
-            
-            return jsonify({
-                'total_files': total_files,
-                'total_directories': total_directories,
-                'total_size': total_size,
-                'total_size_formatted': format_size(total_size),
-                'top_extensions': [{
-                    'extension': ext.extension,
-                    'count': ext.count,
-                    'total_size': ext.total_size,
-                    'total_size_formatted': format_size(ext.total_size)
-                } for ext in top_extensions],
-                'media_files': media_files
-            })
-        except Exception as e:
-            logger.error(f"Error getting analytics overview: {e}")
-            return jsonify({'error': 'Failed to get analytics overview'}), 500
+    # Removed duplicate analytics route - using the one in app.py instead
 
     @app.route('/api/analytics/history')
     def get_storage_history():

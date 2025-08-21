@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown, Folder, File, HardDrive, Trash2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, File, HardDrive, Trash2, FileText, Image, Film, Music, Archive, Code } from 'lucide-react'
 import axios from 'axios'
 
 interface FileItem {
@@ -18,6 +18,54 @@ interface FileItem {
 
 interface FileTree {
   tree: FileItem[]
+}
+
+const getFileIcon = (filename: string) => {
+  const ext = filename.split('.').pop()?.toLowerCase()
+  
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'bmp':
+    case 'svg':
+    case 'webp':
+      return <Image className="h-4 w-4 text-blue-500" />
+    case 'mp4':
+    case 'avi':
+    case 'mkv':
+    case 'mov':
+    case 'wmv':
+    case 'flv':
+    case 'webm':
+      return <Film className="h-4 w-4 text-purple-500" />
+    case 'mp3':
+    case 'wav':
+    case 'flac':
+    case 'aac':
+    case 'ogg':
+      return <Music className="h-4 w-4 text-green-500" />
+    case 'zip':
+    case 'rar':
+    case '7z':
+    case 'tar':
+    case 'gz':
+      return <Archive className="h-4 w-4 text-orange-500" />
+    case 'txt':
+    case 'pdf':
+    case 'doc':
+    case 'docx':
+      return <FileText className="h-4 w-4 text-red-500" />
+    case 'js':
+    case 'ts':
+    case 'py':
+    case 'cpp':
+    case 'java':
+      return <Code className="h-4 w-4 text-yellow-500" />
+    default:
+      return <File className="h-4 w-4 text-gray-500" />
+  }
 }
 
 const Files: React.FC = () => {
@@ -169,10 +217,15 @@ const Files: React.FC = () => {
               <Folder className="h-4 w-4 text-blue-500 mr-2" />
             </>
           ) : (
-            <File className="h-4 w-4 text-gray-500 mr-2 ml-6" />
+            <div className="ml-6 mr-2">
+              {getFileIcon(item.name)}
+            </div>
           )}
           
-          <span className="flex-1 text-sm font-medium text-gray-900 dark:text-white">
+          <span 
+            className="flex-1 text-sm font-medium text-gray-900 dark:text-white truncate"
+            title={`${item.name} (${item.path})`}
+          >
             {item.name}
           </span>
           

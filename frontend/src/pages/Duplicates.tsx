@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Trash2, AlertTriangle, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
+import { Trash2, AlertTriangle, RefreshCw, ChevronDown, ChevronRight, File, FileText, Image, Film, Music, Archive, Code } from 'lucide-react'
 import axios from 'axios'
 
 interface DuplicateFile {
@@ -21,6 +21,54 @@ interface DuplicateGroup {
   total_size: number
   total_size_formatted: string
   files: DuplicateFile[]
+}
+
+const getFileIcon = (filename: string) => {
+  const ext = filename.split('.').pop()?.toLowerCase()
+  
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'bmp':
+    case 'svg':
+    case 'webp':
+      return <Image className="h-4 w-4 text-blue-500" />
+    case 'mp4':
+    case 'avi':
+    case 'mkv':
+    case 'mov':
+    case 'wmv':
+    case 'flv':
+    case 'webm':
+      return <Film className="h-4 w-4 text-purple-500" />
+    case 'mp3':
+    case 'wav':
+    case 'flac':
+    case 'aac':
+    case 'ogg':
+      return <Music className="h-4 w-4 text-green-500" />
+    case 'zip':
+    case 'rar':
+    case '7z':
+    case 'tar':
+    case 'gz':
+      return <Archive className="h-4 w-4 text-orange-500" />
+    case 'txt':
+    case 'pdf':
+    case 'doc':
+    case 'docx':
+      return <FileText className="h-4 w-4 text-red-500" />
+    case 'js':
+    case 'ts':
+    case 'py':
+    case 'cpp':
+    case 'java':
+      return <Code className="h-4 w-4 text-yellow-500" />
+    default:
+      return <File className="h-4 w-4 text-gray-500" />
+  }
 }
 
 const Duplicates: React.FC = () => {
@@ -162,13 +210,16 @@ const Duplicates: React.FC = () => {
                       <ChevronRight className="h-5 w-5" />
                     )}
                   </button>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                      {group.file_count} duplicate files
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Hash: {group.hash.substring(0, 16)}...
-                    </p>
+                  <div className="flex items-center space-x-2">
+                    {getFileIcon(group.files.find(f => f.is_primary)?.name || group.files[0]?.name || '')}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+                        {group.files.find(f => f.is_primary)?.name || group.files[0]?.name || 'Unknown file'}
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {group.file_count} copies • Hash: {group.hash.substring(0, 16)}...
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -189,13 +240,16 @@ const Duplicates: React.FC = () => {
                       key={file.id}
                       className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-md"
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {file.name}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {file.path}
-                        </p>
+                      <div className="flex items-center space-x-2 flex-1 min-w-0">
+                        {getFileIcon(file.name)}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {file.path}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex items-center space-x-3">
                         <span className="text-sm text-gray-500 dark:text-gray-400">
