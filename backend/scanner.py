@@ -379,9 +379,9 @@ class FileScanner:
                 """Check if a share should be excluded"""
                 share_lower = share_name.lower()
                 
-                # CRITICAL: Exclude appdata share completely
-                if share_lower == 'appdata':
-                    logger.info(f"EXCLUDING appdata share: {share_name}")
+                # ABSOLUTE CRITICAL: Exclude appdata share completely - MULTIPLE CHECKS
+                if share_lower == 'appdata' or 'appdata' in share_lower:
+                    logger.error(f"🚨 BLOCKING APPDATA SHARE: {share_name} - ABSOLUTELY FORBIDDEN")
                     return True
                 
                 # Also exclude other problematic shares
@@ -428,13 +428,14 @@ class FileScanner:
             db_cleanup_interval = 300  # Clean up database connections every 5 minutes
             
             # COMPLETE REWRITE: Manual directory traversal with share-level exclusion
-            logger.info("Starting manual directory traversal with share-level exclusion...")
+            logger.error("🚨 STARTING BULLETPROOF SCAN WITH APPDATA EXCLUSION v1.7.2+ 🚨")
+            logger.error(f"🚨 SCANNER VERSION CHECK: This should show if container is updated")
             
             # Get all top-level shares/directories
             try:
                 top_level_items = os.listdir(self.data_path)
-                logger.info(f"Found {len(top_level_items)} top-level items in {self.data_path}")
-                logger.info(f"Top-level items: {top_level_items}")
+                logger.error(f"🚨 Found {len(top_level_items)} top-level items in {self.data_path}")
+                logger.error(f"🚨 Top-level items: {top_level_items}")
             except Exception as e:
                 logger.error(f"Error listing top-level directories: {e}")
                 raise
@@ -449,10 +450,10 @@ class FileScanner:
                 
                 # CRITICAL: Check if this share should be excluded BEFORE processing
                 if is_excluded_share(share_name):
-                    logger.info(f"SKIPPING excluded share: {share_name} at {share_path}")
+                    logger.error(f"🚨 SKIPPING EXCLUDED SHARE: {share_name} at {share_path}")
                     continue
                 
-                logger.info(f"Processing share: {share_name} at {share_path}")
+                logger.error(f"🚨 PROCESSING ALLOWED SHARE: {share_name} at {share_path}")
                 
                 # Check if it's a directory
                 if not os.path.isdir(share_path):
@@ -466,10 +467,11 @@ class FileScanner:
                             logger.info("Scan stopped by user request")
                             break
                         
-                        # ADDITIONAL SAFETY CHECK: Skip any appdata paths that somehow got through
+                        # EMERGENCY CRASH PROTECTION: If any appdata path is detected, CRASH THE SCAN
                         if 'appdata' in root.lower():
-                            logger.warning(f"CRITICAL: Found appdata path in scan: {root} - SKIPPING")
-                            continue
+                            error_msg = f"🚨 SCANNER FAILURE: Appdata path detected: {root} - THIS SHOULD NEVER HAPPEN!"
+                            logger.error(error_msg)
+                            raise Exception(error_msg)
                         
                         # FILTER OUT APPDATA DIRECTORIES: Remove any appdata-related directories from dirs list
                         original_dirs = dirs.copy()
