@@ -11,7 +11,7 @@ def main():
     
     # Check VERSION file
     try:
-        with open('/app/VERSION', 'r') as f:
+        with open('./VERSION', 'r') as f:
             version = f.read().strip()
         print(f"VERSION file: {version}")
     except Exception as e:
@@ -19,7 +19,7 @@ def main():
     
     # Check if scanner.py has the bulletproof messages
     try:
-        with open('/app/backend/scanner.py', 'r') as f:
+        with open('./scanner.py', 'r') as f:
             content = f.read()
         
         if "🚨 STARTING BULLETPROOF SCAN" in content:
