@@ -24,6 +24,7 @@ interface ScanStatus {
   progress_percentage?: number
   processing_rate?: string
   scan_duration?: string
+  error_message?: string
 }
 
 interface AnalyticsOverview {
@@ -371,6 +372,95 @@ const Dashboard: React.FC = () => {
                   {scanStatus.processing_rate || 'Unknown'}
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Failed Scan Status */}
+      {scanStatus.status === 'failed' && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 dark:bg-red-900/20 dark:border-red-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="text-red-600 mr-3">
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-red-900 dark:text-red-100">
+                  Scan failed
+                </p>
+                {scanStatus.error_message && (
+                  <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+                    Error: {scanStatus.error_message}
+                  </p>
+                )}
+                {scanStatus.total_files && scanStatus.total_files > 0 && (
+                  <p className="text-xs text-red-700 dark:text-red-300">
+                    Processed {scanStatus.total_files.toLocaleString()} files before failure
+                  </p>
+                )}
+                <p className="text-xs text-red-700 dark:text-red-300">
+                  Duration: {scanStatus.elapsed_time_formatted || scanStatus.scan_duration || 'Unknown'}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-medium text-red-900 dark:text-red-100">
+                {scanStatus.total_size_formatted || '0 B'}
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-300">
+                Scan ID: {scanStatus.scan_id}
+              </p>
+            </div>
+          </div>
+          
+          {/* Error details */}
+          {scanStatus.error_message && (
+            <div className="mt-3 p-3 bg-red-100 dark:bg-red-800/50 rounded">
+              <h4 className="text-sm font-semibold text-red-800 dark:text-red-200 mb-2">
+                🔍 Error Details
+              </h4>
+              <div className="text-xs text-red-700 dark:text-red-300 font-mono break-all">
+                {scanStatus.error_message}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stopped Scan Status */}
+      {scanStatus.status === 'stopped' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 dark:bg-yellow-900/20 dark:border-yellow-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="text-yellow-600 mr-3">
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
+                  Scan stopped
+                </p>
+                {scanStatus.total_files && scanStatus.total_files > 0 && (
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                    Processed {scanStatus.total_files.toLocaleString()} files before stopping
+                  </p>
+                )}
+                <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                  Duration: {scanStatus.elapsed_time_formatted || scanStatus.scan_duration || 'Unknown'}
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
+                {scanStatus.total_size_formatted || '0 B'}
+              </p>
+              <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                Scan ID: {scanStatus.scan_id}
+              </p>
             </div>
           </div>
         </div>
