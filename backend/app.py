@@ -198,15 +198,31 @@ def run_scheduled_scan():
         db.session.commit()
         logger.info(f"Scheduled scan record created with ID: {scan_record.id}")
         
-        # Start the scan
-        logger.info("Starting scheduled scan in background thread...")
-        scan_thread = threading.Thread(
-            target=scan_directory,
-            args=(data_path, scan_record.id)
-        )
+        # Start the scan using new FileScanner with bulletproof appdata exclusion
+        logger.info("Starting NEW FileScanner for scheduled scan...")
+        
+        # Import and use the new scanner
+        from scanner import FileScanner
+        scanner = FileScanner(data_path, max_duration=max_duration)
+        
+        def run_scheduled_scanner():
+            try:
+                # Update the scan record to use our new scanner
+                scanner.current_scan = scan_record
+                scanner.scanning = True
+                scanner._scan_filesystem()
+            except Exception as e:
+                logger.error(f"Scheduled scanner error: {e}")
+                # Mark scan as failed
+                scan_record.status = 'failed'
+                scan_record.error_message = str(e)
+                scan_record.end_time = datetime.now()
+                db.session.commit()
+        
+        scan_thread = threading.Thread(target=run_scheduled_scanner)
         scan_thread.daemon = True
         scan_thread.start()
-        logger.info(f"Scheduled scan thread started with ID: {scan_thread.ident}")
+        logger.info(f"NEW FileScanner scheduled scan thread started with ID: {scan_thread.ident}")
         logger.info(f"=== SCHEDULED SCAN INITIATED ===")
         logger.info(f"Scan ID: {scan_record.id}")
         logger.info(f"Data path: {data_path}")
@@ -1431,16 +1447,32 @@ def start_scan():
         db.session.commit()
         logger.info(f"Scan record created with ID: {scan_record.id}")
         
-        # Start scan in background thread
+        # Start scan using new FileScanner with bulletproof appdata exclusion
         data_path = os.environ.get('DATA_PATH', '/data')
-        logger.info(f"Starting scan thread for data path: {data_path}")
-        scan_thread = threading.Thread(
-            target=scan_directory,
-            args=(data_path, scan_record.id)
-        )
+        logger.info(f"Starting NEW FileScanner with bulletproof exclusion for data path: {data_path}")
+        
+        # Import and use the new scanner
+        from scanner import FileScanner
+        scanner = FileScanner(data_path, max_duration=6)
+        
+        def run_new_scanner():
+            try:
+                # Update the scan record to use our new scanner
+                scanner.current_scan = scan_record
+                scanner.scanning = True
+                scanner._scan_filesystem()
+            except Exception as e:
+                logger.error(f"Scanner error: {e}")
+                # Mark scan as failed
+                scan_record.status = 'failed'
+                scan_record.error_message = str(e)
+                scan_record.end_time = datetime.now()
+                db.session.commit()
+        
+        scan_thread = threading.Thread(target=run_new_scanner)
         scan_thread.daemon = True
         scan_thread.start()
-        logger.info("Scan thread started successfully")
+        logger.info("NEW FileScanner thread started successfully")
         
         logger.info(f"=== MANUAL SCAN INITIATED ===")
         logger.info(f"Scan ID: {scan_record.id}")
