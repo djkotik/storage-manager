@@ -466,6 +466,17 @@ class FileScanner:
                             logger.info("Scan stopped by user request")
                             break
                         
+                        # ADDITIONAL SAFETY CHECK: Skip any appdata paths that somehow got through
+                        if 'appdata' in root.lower():
+                            logger.warning(f"CRITICAL: Found appdata path in scan: {root} - SKIPPING")
+                            continue
+                        
+                        # FILTER OUT APPDATA DIRECTORIES: Remove any appdata-related directories from dirs list
+                        original_dirs = dirs.copy()
+                        dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                        if len(original_dirs) != len(dirs):
+                            logger.warning(f"Filtered out {len(original_dirs) - len(dirs)} appdata directories from {root}")
+                        
                         # Check for directory timeout
                         current_time = time.time()
                         if current_time - last_directory_time > directory_timeout:
