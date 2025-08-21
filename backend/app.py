@@ -171,6 +171,9 @@ scanner_state = {
     'error': None
 }
 
+# Global scanner instance for stop functionality
+current_scanner_instance = None
+
 # Scheduled scan functionality
 def run_scheduled_scan():
     """Run a scheduled scan"""
@@ -204,6 +207,10 @@ def run_scheduled_scan():
         # Import and use the new scanner
         from scanner import FileScanner
         scanner = FileScanner(data_path, max_duration=max_duration)
+        
+        # Set global reference for stop functionality
+        global current_scanner_instance
+        current_scanner_instance = scanner
         
         def run_scheduled_scanner():
             # CRITICAL: Set up Flask application context for database operations
@@ -1457,6 +1464,10 @@ def start_scan():
         from scanner import FileScanner
         scanner = FileScanner(data_path, max_duration=6)
         
+        # Set global reference for stop functionality
+        global current_scanner_instance
+        current_scanner_instance = scanner
+        
         def run_new_scanner():
             # CRITICAL: Set up Flask application context for database operations
             with app.app_context():
@@ -1498,6 +1509,15 @@ def stop_scan():
     """Stop the current scan"""
     try:
         if scanner_state['scanning']:
+            logger.info("=== SCAN STOP REQUEST ===")
+            
+            # Signal the new scanner to stop (global variable approach)
+            global current_scanner_instance
+            if 'current_scanner_instance' in globals() and current_scanner_instance:
+                logger.info("Signaling scanner instance to stop")
+                current_scanner_instance.stop_current_scan()
+            
+            # Update in-memory state
             scanner_state['scanning'] = False
             scanner_state['error'] = 'Scan stopped by user'
             logger.info("Scan stopped by user")
