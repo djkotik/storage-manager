@@ -553,24 +553,29 @@ class FileScanner:
                              dir_path = os.path.join(root, dir_name)
                              
                              try:
-                                 # Create directory record using FileRecord with is_directory=True
-                                 dir_record = FileRecord(
-                                     path=dir_path,
-                                     name=dir_name,
-                                     size=0,
-                                     is_directory=True,
-                                     parent_path=root,
-                                     scan_id=self.current_scan.id
-                                 )
-                                 db.session.add(dir_record)
-                                 total_directories += 1
-                                 self._total_directories = total_directories
-                                 
-                                 # Commit every 100 directories to prevent memory buildup
-                                 if total_directories % 100 == 0:
-                                     db.session.commit()
-                                     logger.debug(f"Committed {total_directories} directories")
-                                     
+                                # Ensure we have a scan record
+                                if not self.current_scan:
+                                    logger.error(f"🚨 CRITICAL: current_scan is None during directory processing: {dir_path}")
+                                    continue
+                                
+                                # Create directory record using FileRecord with is_directory=True
+                                dir_record = FileRecord(
+                                    path=dir_path,
+                                    name=dir_name,
+                                    size=0,
+                                    is_directory=True,
+                                    parent_path=root,
+                                    scan_id=self.current_scan.id
+                                )
+                                db.session.add(dir_record)
+                                total_directories += 1
+                                self._total_directories = total_directories
+                                
+                                # Commit every 100 directories to prevent memory buildup
+                                if total_directories % 100 == 0:
+                                    db.session.commit()
+                                    logger.debug(f"Committed {total_directories} directories")
+                                    
                              except Exception as e:
                                  logger.error(f"Error processing directory {dir_path}: {e}")
                                  db.session.rollback()
@@ -584,6 +589,11 @@ class FileScanner:
                             file_path = os.path.join(root, file_name)
                             
                             try:
+                                # Ensure we have a scan record
+                                if not self.current_scan:
+                                    logger.error(f"🚨 CRITICAL: current_scan is None during file processing: {file_path}")
+                                    continue
+                                
                                 # Get file stats
                                 stat = os.stat(file_path)
                                 file_size = stat.st_size
@@ -620,10 +630,14 @@ class FileScanner:
                         current_time = time.time()
                         if current_time - last_update_time > 30:  # Update every 30 seconds
                             try:
-                                self.current_scan.total_files = total_files
-                                self.current_scan.total_directories = total_directories
-                                self.current_scan.total_size = total_size
-                                db.session.commit()
+                                # Ensure we have a scan record
+                                if self.current_scan:
+                                    self.current_scan.total_files = total_files
+                                    self.current_scan.total_directories = total_directories
+                                    self.current_scan.total_size = total_size
+                                    db.session.commit()
+                                else:
+                                    logger.error(f"🚨 CRITICAL: current_scan is None during progress update")
                                 
                                 # CRITICAL: Update global scanner_state for dashboard display
                                 self.update_scanner_state(total_files, total_directories, total_size, share_path)
@@ -655,6 +669,11 @@ class FileScanner:
             
             # Final commit with Flask context protection
             try:
+                # Ensure we have a scan record first
+                if not self.current_scan:
+                    logger.error(f"🚨 CRITICAL: current_scan is None during finalization!")
+                    return
+                
                 # Ensure we're in Flask context for final operations
                 try:
                     from flask import current_app

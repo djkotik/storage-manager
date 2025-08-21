@@ -191,16 +191,6 @@ def run_scheduled_scan():
         max_duration = int(get_setting('max_scan_duration', '6'))
         logger.info(f"Scan settings - Data path: {data_path}, Max duration: {max_duration} hours")
         
-        # Create scan record
-        logger.info("Creating scheduled scan record...")
-        scan_record = ScanRecord(
-            start_time=datetime.now(),
-            status='running'
-        )
-        db.session.add(scan_record)
-        db.session.commit()
-        logger.info(f"Scheduled scan record created with ID: {scan_record.id}")
-        
         # Start the scan using new FileScanner with bulletproof appdata exclusion
         logger.info("Starting NEW FileScanner for scheduled scan...")
         
@@ -216,28 +206,13 @@ def run_scheduled_scan():
         global current_scanner_instance
         current_scanner_instance = scanner
         
-        def run_scheduled_scanner():
-            # CRITICAL: Set up Flask application context for database operations
-            with app.app_context():
-                try:
-                    # Update the scan record to use our new scanner
-                    scanner.current_scan = scan_record
-                    scanner.scanning = True
-                    scanner._scan_filesystem()
-                except Exception as e:
-                    logger.error(f"Scheduled scanner error: {e}")
-                    # Mark scan as failed
-                    scan_record.status = 'failed'
-                    scan_record.error_message = str(e)
-                    scan_record.end_time = datetime.now()
-                    db.session.commit()
+        # Use the scanner's built-in start_scan method within Flask context
+        with app.app_context():
+            scan_id = scanner.start_scan()
+            logger.info(f"Scheduled scanner started with ID: {scan_id}")
         
-        scan_thread = threading.Thread(target=run_scheduled_scanner)
-        scan_thread.daemon = True
-        scan_thread.start()
-        logger.info(f"NEW FileScanner scheduled scan thread started with ID: {scan_thread.ident}")
         logger.info(f"=== SCHEDULED SCAN INITIATED ===")
-        logger.info(f"Scan ID: {scan_record.id}")
+        logger.info(f"Scan ID: {scan_id}")
         logger.info(f"Data path: {data_path}")
                 
     except Exception as e:
@@ -1450,16 +1425,6 @@ def start_scan():
             logger.warning("Scan already in progress, rejecting request")
             return jsonify({'error': 'Scan already in progress'}), 400
         
-        # Create scan record
-        logger.info("Creating scan record...")
-        scan_record = ScanRecord(
-            start_time=datetime.now(),
-            status='running'
-        )
-        db.session.add(scan_record)
-        db.session.commit()
-        logger.info(f"Scan record created with ID: {scan_record.id}")
-        
         # Start scan using new FileScanner with bulletproof appdata exclusion
         data_path = os.environ.get('DATA_PATH', '/data')
         logger.info(f"Starting NEW FileScanner with bulletproof exclusion for data path: {data_path}")
@@ -1476,35 +1441,18 @@ def start_scan():
         global current_scanner_instance
         current_scanner_instance = scanner
         
-        def run_new_scanner():
-            # CRITICAL: Set up Flask application context for database operations
-            with app.app_context():
-                try:
-                    # Update the scan record to use our new scanner
-                    scanner.current_scan = scan_record
-                    scanner.scanning = True
-                    scanner._scan_filesystem()
-                except Exception as e:
-                    logger.error(f"Scanner error: {e}")
-                    # Mark scan as failed
-                    scan_record.status = 'failed'
-                    scan_record.error_message = str(e)
-                    scan_record.end_time = datetime.now()
-                    db.session.commit()
-        
-        scan_thread = threading.Thread(target=run_new_scanner)
-        scan_thread.daemon = True
-        scan_thread.start()
-        logger.info("NEW FileScanner thread started successfully")
+        # Use the scanner's built-in start_scan method within Flask context
+        with app.app_context():
+            scan_id = scanner.start_scan()
+            logger.info(f"Scanner started with ID: {scan_id}")
         
         logger.info(f"=== MANUAL SCAN INITIATED ===")
-        logger.info(f"Scan ID: {scan_record.id}")
+        logger.info(f"Scan ID: {scan_id}")
         logger.info(f"Data path: {data_path}")
-        logger.info(f"Thread ID: {scan_thread.ident}")
         
         return jsonify({
             'message': 'Scan started successfully',
-            'scan_id': scan_record.id
+            'scan_id': scan_id
         })
     except Exception as e:
         logger.error(f"=== SCAN START ERROR ===")
