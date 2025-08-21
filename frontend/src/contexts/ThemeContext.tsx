@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 
-type Theme = 'unraid' | 'plex' | 'dark' | 'light'
+type Theme = 'unraid' | 'plex' | 'emby' | 'jellyfin' | 'sonarr' | 'radarr' | 'dark' | 'light'
 
 interface ThemeContextType {
   theme: Theme
@@ -28,7 +28,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     return (saved as Theme) || 'unraid'
   })
 
-  const isDark = theme === 'dark' || theme === 'plex'
+  const isDark = theme === 'dark' || theme === 'plex' || theme === 'emby' || theme === 'jellyfin' || theme === 'sonarr' || theme === 'radarr'
 
   const setTheme = (newTheme: Theme) => {
     console.log('Setting theme to:', newTheme) // Debug log
@@ -41,18 +41,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     console.log('Applying theme:', theme) // Debug log
     
     // Remove all theme classes
-    root.classList.remove('theme-unraid', 'theme-plex', 'theme-dark', 'theme-light', 'dark')
+    root.classList.remove('theme-unraid', 'theme-plex', 'theme-emby', 'theme-jellyfin', 'theme-sonarr', 'theme-radarr', 'theme-dark', 'theme-light', 'dark')
     
     // Add the current theme class
-    if (theme === 'unraid') {
-      root.classList.add('theme-unraid')
-    } else if (theme === 'plex') {
-      root.classList.add('theme-plex')
-    } else if (theme === 'dark') {
-      root.classList.add('theme-dark')
-    } else if (theme === 'light') {
-      root.classList.add('theme-light')
-    }
+    root.classList.add(`theme-${theme}`)
     
     // Add dark class for dark themes
     if (isDark) {

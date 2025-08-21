@@ -81,6 +81,90 @@
   --input: 51 65 85;
 }
 
+.theme-emby {
+  --primary: 52 211 153;
+  --primary-foreground: 255 255 255;
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --input: 226 232 240;
+  --ring: 52 211 153;
+}
+
+.theme-emby.dark {
+  --background: 15 23 42;
+  --foreground: 248 250 252;
+  --card: 30 41 59;
+  --card-foreground: 248 250 252;
+  --border: 51 65 85;
+  --input: 51 65 85;
+}
+
+.theme-jellyfin {
+  --primary: 168 85 247;
+  --primary-foreground: 255 255 255;
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --input: 226 232 240;
+  --ring: 168 85 247;
+}
+
+.theme-jellyfin.dark {
+  --background: 15 23 42;
+  --foreground: 248 250 252;
+  --card: 30 41 59;
+  --card-foreground: 248 250 252;
+  --border: 51 65 85;
+  --input: 51 65 85;
+}
+
+.theme-sonarr {
+  --primary: 34 197 94;
+  --primary-foreground: 255 255 255;
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --input: 226 232 240;
+  --ring: 34 197 94;
+}
+
+.theme-sonarr.dark {
+  --background: 15 23 42;
+  --foreground: 248 250 252;
+  --card: 30 41 59;
+  --card-foreground: 248 250 252;
+  --border: 51 65 85;
+  --input: 51 65 85;
+}
+
+.theme-radarr {
+  --primary: 239 68 68;
+  --primary-foreground: 255 255 255;
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --input: 226 232 240;
+  --ring: 239 68 68;
+}
+
+.theme-radarr.dark {
+  --background: 15 23 42;
+  --foreground: 248 250 252;
+  --card: 30 41 59;
+  --card-foreground: 248 250 252;
+  --border: 51 65 85;
+  --input: 51 65 85;
+}
+
 /* Light theme */
 .theme-light {
   --primary: 59 130 246;
@@ -148,6 +232,86 @@
   --tw-ring-color: rgb(217 70 239);
 }
 
+.theme-emby {
+  color-scheme: light;
+}
+
+.theme-emby .bg-blue-600 {
+  background-color: rgb(52 211 153);
+}
+
+.theme-emby .text-blue-600 {
+  color: rgb(52 211 153);
+}
+
+.theme-emby .border-blue-500 {
+  border-color: rgb(52 211 153);
+}
+
+.theme-emby .ring-blue-500 {
+  --tw-ring-color: rgb(52 211 153);
+}
+
+.theme-jellyfin {
+  color-scheme: light;
+}
+
+.theme-jellyfin .bg-blue-600 {
+  background-color: rgb(168 85 247);
+}
+
+.theme-jellyfin .text-blue-600 {
+  color: rgb(168 85 247);
+}
+
+.theme-jellyfin .border-blue-500 {
+  border-color: rgb(168 85 247);
+}
+
+.theme-jellyfin .ring-blue-500 {
+  --tw-ring-color: rgb(168 85 247);
+}
+
+.theme-sonarr {
+  color-scheme: light;
+}
+
+.theme-sonarr .bg-blue-600 {
+  background-color: rgb(34 197 94);
+}
+
+.theme-sonarr .text-blue-600 {
+  color: rgb(34 197 94);
+}
+
+.theme-sonarr .border-blue-500 {
+  border-color: rgb(34 197 94);
+}
+
+.theme-sonarr .ring-blue-500 {
+  --tw-ring-color: rgb(34 197 94);
+}
+
+.theme-radarr {
+  color-scheme: light;
+}
+
+.theme-radarr .bg-blue-600 {
+  background-color: rgb(239 68 68);
+}
+
+.theme-radarr .text-blue-600 {
+  color: rgb(239 68 68);
+}
+
+.theme-radarr .border-blue-500 {
+  border-color: rgb(239 68 68);
+}
+
+.theme-radarr .ring-blue-500 {
+  --tw-ring-color: rgb(239 68 68);
+}
+
 /* Light theme overrides */
 .theme-light .bg-blue-600 {
   background-color: rgb(59 130 246);
@@ -204,6 +368,54 @@
 }
 
 .dark.theme-plex .border-gray-700 {
+  border-color: rgb(51 65 85);
+}
+
+.dark.theme-emby .bg-gray-800 {
+  background-color: rgb(15 23 42);
+}
+
+.dark.theme-emby .bg-gray-700 {
+  background-color: rgb(30 41 59);
+}
+
+.dark.theme-emby .border-gray-700 {
+  border-color: rgb(51 65 85);
+}
+
+.dark.theme-jellyfin .bg-gray-800 {
+  background-color: rgb(15 23 42);
+}
+
+.dark.theme-jellyfin .bg-gray-700 {
+  background-color: rgb(30 41 59);
+}
+
+.dark.theme-jellyfin .border-gray-700 {
+  border-color: rgb(51 65 85);
+}
+
+.dark.theme-sonarr .bg-gray-800 {
+  background-color: rgb(15 23 42);
+}
+
+.dark.theme-sonarr .bg-gray-700 {
+  background-color: rgb(30 41 59);
+}
+
+.dark.theme-sonarr .border-gray-700 {
+  border-color: rgb(51 65 85);
+}
+
+.dark.theme-radarr .bg-gray-800 {
+  background-color: rgb(15 23 42);
+}
+
+.dark.theme-radarr .bg-gray-700 {
+  background-color: rgb(30 41 59);
+}
+
+.dark.theme-radarr .border-gray-700 {
   border-color: rgb(51 65 85);
 }
 

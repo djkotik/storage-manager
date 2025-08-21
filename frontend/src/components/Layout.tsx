@@ -27,6 +27,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [availableThemes, setAvailableThemes] = useState([
     { name: 'unRAID', value: 'unraid' },
     { name: 'Plex', value: 'plex' },
+    { name: 'Emby', value: 'emby' },
+    { name: 'Jellyfin', value: 'jellyfin' },
+    { name: 'Sonarr', value: 'sonarr' },
+    { name: 'Radarr', value: 'radarr' },
     { name: 'Dark', value: 'dark' },
     { name: 'Light', value: 'light' },
   ])
