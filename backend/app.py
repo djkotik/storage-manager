@@ -754,7 +754,7 @@ def scan_directory(data_path, scan_id):
             logger.info("Scan state cleaned up")
 
 def calculate_folder_totals_during_scan(data_path, scan_id):
-    """Calculate and store comprehensive folder information during scan"""
+    """Calculate and store comprehensive folder information during scan - OPTIMIZED VERSION"""
     logger.info(f"=== FOLDER CALCULATION START ===")
     logger.info(f"Data path: {data_path}")
     logger.info(f"Scan ID: {scan_id}")
@@ -769,20 +769,29 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         db.session.commit()
         logger.info("Existing folder info cleared")
         
-        # Get all directories from this scan, ordered by path length (process children first so parents can aggregate)
-        logger.info("Querying directories from database...")
-        directories = db.session.query(
+        # OPTIMIZATION: Single query to get all directory information with aggregated data
+        logger.info("Querying directories with aggregated data...")
+        
+        # Get all directories with their direct file counts and sizes in a single query
+        directory_data = db.session.query(
             FileRecord.path,
             FileRecord.name,
-            FileRecord.parent_path
+            FileRecord.parent_path,
+            func.count(case((FileRecord.is_directory == False, 1), else_=None)).label('direct_file_count'),
+            func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('direct_directory_count'),
+            func.coalesce(func.sum(case((FileRecord.is_directory == False, FileRecord.size), else_=0)), 0).label('direct_size')
         ).filter(
             FileRecord.scan_id == scan_id,
             FileRecord.is_directory == True
+        ).group_by(
+            FileRecord.path,
+            FileRecord.name,
+            FileRecord.parent_path
         ).order_by(db.func.length(FileRecord.path).desc()).all()
         
-        logger.info(f"Found {len(directories)} directories to process")
+        logger.info(f"Found {len(directory_data)} directories to process")
         
-        if not directories:
+        if not directory_data:
             logger.warning("No directories found for this scan")
             return
         
@@ -791,7 +800,7 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         processed_count = 0
         
         # Process each directory
-        for directory in directories:
+        for directory in directory_data:
             try:
                 path = directory.path
                 name = directory.name
@@ -801,28 +810,15 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                 relative_path = path.replace(data_path, '').strip('/')
                 depth = len(relative_path.split('/')) if relative_path else 0
                 
-                # Calculate direct children (files and directories directly in this folder)
-                direct_children = db.session.query(
-                    func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('direct_file_count'),
-                    func.sum(case((FileRecord.is_directory == True, 1), else_=0)).label('direct_directory_count')
-                ).filter(
-                    FileRecord.parent_path == path,
-                    FileRecord.scan_id == scan_id
-                ).first()
-                
-                # Calculate total size of files directly in this folder
-                direct_size = db.session.query(
-                    func.sum(FileRecord.size).label('direct_size')
-                ).filter(
-                    FileRecord.parent_path == path,
-                    FileRecord.is_directory == False,
-                    FileRecord.scan_id == scan_id
-                ).scalar() or 0
+                # Get direct counts and size from the query result
+                direct_file_count = int(directory.direct_file_count or 0)
+                direct_directory_count = int(directory.direct_directory_count or 0)
+                direct_size = int(directory.direct_size or 0)
                 
                 # Initialize totals
                 total_size = direct_size
-                total_file_count = int(direct_children.direct_file_count or 0)
-                total_directory_count = int(direct_children.direct_directory_count or 0)
+                total_file_count = direct_file_count
+                total_directory_count = direct_directory_count
                 
                 # Add totals from subdirectories (already calculated due to ordering by path length)
                 for subfolder_path, subfolder_info in folder_info.items():
@@ -838,8 +834,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                     'total_size': total_size,
                     'file_count': total_file_count,
                     'directory_count': total_directory_count,
-                    'direct_file_count': int(direct_children.direct_file_count or 0),
-                    'direct_directory_count': int(direct_children.direct_directory_count or 0),
+                    'direct_file_count': direct_file_count,
+                    'direct_directory_count': direct_directory_count,
                     'depth': depth
                 }
                 
@@ -851,8 +847,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                     total_size=total_size,
                     file_count=total_file_count,
                     directory_count=total_directory_count,
-                    direct_file_count=int(direct_children.direct_file_count or 0),
-                    direct_directory_count=int(direct_children.direct_directory_count or 0),
+                    direct_file_count=direct_file_count,
+                    direct_directory_count=direct_directory_count,
                     depth=depth,
                     scan_id=scan_id
                 )
@@ -860,10 +856,10 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
                 
                 processed_count += 1
                 
-                # Commit in batches to avoid memory issues
-                if processed_count % 100 == 0:
+                # Commit in larger batches for better performance
+                if processed_count % 500 == 0:
                     db.session.commit()
-                    logger.info(f"Processed {processed_count}/{len(directories)} folders")
+                    logger.info(f"Processed {processed_count}/{len(directory_data)} folders")
                     
             except Exception as e:
                 logger.error(f"Error processing directory {directory.path}: {e}")
@@ -1312,6 +1308,18 @@ def reset_database():
         logger.info("Recreating database tables...")
         db.create_all()
         
+        # Verify all tables were created
+        logger.info("Verifying table creation...")
+        inspector = db.inspect(db.engine)
+        created_tables = inspector.get_table_names()
+        expected_tables = ['files', 'scans', 'media_files', 'duplicate_groups', 'duplicate_files', 'storage_history', 'settings', 'trash_bin', 'folder_info']
+        
+        missing_tables = [table for table in expected_tables if table not in created_tables]
+        if missing_tables:
+            logger.warning(f"Missing tables after creation: {missing_tables}")
+        else:
+            logger.info(f"All {len(created_tables)} tables created successfully")
+        
         # Create indexes
         logger.info("Creating database indexes...")
         try:
@@ -1351,6 +1359,14 @@ def reset_database():
         global cache
         cache.clear()
         logger.info("Cache cleared")
+        
+        # Force cleanup of any remaining database connections
+        logger.info("Cleaning up database connections...")
+        db.session.rollback()
+        db.session.close()
+        db.session.remove()
+        db.engine.dispose()
+        logger.info("Database connections cleaned up")
         
         # Reset scanner state
         scanner_state.update({
@@ -1462,13 +1478,21 @@ def trigger_scheduled_scan():
 def get_scan_status():
     """Get current scan status with estimated completion time and percentage"""
     try:
+        # Check for running scans in database
+        running_scan = db.session.query(ScanRecord).filter(ScanRecord.status == 'running').first()
+        
+        # If we have a running scan in DB but scanner state says not scanning, update state
+        if running_scan and not scanner_state['scanning']:
+            scanner_state['scanning'] = True
+            scanner_state['current_scan_id'] = running_scan.id
+            scanner_state['start_time'] = running_scan.start_time
+            logger.info(f"Scan status corrected: found running scan {running_scan.id} in DB")
+        
         # Safety check: if in-memory state says scanning but DB shows no running scans, reset state
-        if scanner_state['scanning']:
-            running_scan = db.session.query(ScanRecord).filter(ScanRecord.status == 'running').first()
-            if not running_scan:
-                scanner_state['scanning'] = False
-                scanner_state['current_path'] = ''
-                logger.info("Scan status corrected: no running scans in DB; hiding banner")
+        if scanner_state['scanning'] and not running_scan:
+            scanner_state['scanning'] = False
+            scanner_state['current_path'] = ''
+            logger.info("Scan status corrected: no running scans in DB; hiding banner")
 
         status_data = {
             'status': 'scanning' if scanner_state['scanning'] else 'idle',
@@ -1482,6 +1506,52 @@ def get_scan_status():
             'current_path': scanner_state['current_path'],
             'error': scanner_state['error']
         }
+        
+        # Add elapsed time and duration formatting
+        if scanner_state['scanning'] and scanner_state['start_time']:
+            elapsed_time = datetime.now() - scanner_state['start_time']
+            elapsed_seconds = elapsed_time.total_seconds()
+            
+            # Format duration for display
+            if elapsed_seconds < 60:
+                scan_duration = f"{elapsed_seconds:.0f}s"
+            elif elapsed_seconds < 3600:
+                minutes = int(elapsed_seconds // 60)
+                secs = int(elapsed_seconds % 60)
+                scan_duration = f"{minutes}m {secs}s"
+            else:
+                hours = int(elapsed_seconds // 3600)
+                minutes = int((elapsed_seconds % 3600) // 60)
+                scan_duration = f"{hours}h {minutes}m"
+            
+            status_data['elapsed_time'] = str(elapsed_time).split('.')[0]  # Remove microseconds
+            status_data['elapsed_time_formatted'] = scan_duration
+            status_data['scan_duration'] = scan_duration
+            
+            # Add debugging information
+            logger.info(f"Scan duration calculation: elapsed_seconds={elapsed_seconds}, scan_duration='{scan_duration}'")
+        else:
+            logger.info(f"Scan duration not calculated: scanning={scanner_state['scanning']}, start_time={scanner_state['start_time']}")
+            # Try to get duration from database if scanner state is not available
+            if running_scan and running_scan.start_time:
+                elapsed_time = datetime.now() - running_scan.start_time
+                elapsed_seconds = elapsed_time.total_seconds()
+                
+                if elapsed_seconds < 60:
+                    scan_duration = f"{elapsed_seconds:.0f}s"
+                elif elapsed_seconds < 3600:
+                    minutes = int(elapsed_seconds // 60)
+                    secs = int(elapsed_seconds % 60)
+                    scan_duration = f"{minutes}m {secs}s"
+                else:
+                    hours = int(elapsed_seconds // 3600)
+                    minutes = int((elapsed_seconds % 3600) // 60)
+                    scan_duration = f"{hours}h {minutes}m"
+                
+                status_data['elapsed_time'] = str(elapsed_time).split('.')[0]
+                status_data['elapsed_time_formatted'] = scan_duration
+                status_data['scan_duration'] = scan_duration
+                logger.info(f"Using database scan duration: {scan_duration}")
         
         # Calculate estimated completion time and percentage if scan is running
         if scanner_state['scanning'] and scanner_state['start_time']:
@@ -1512,14 +1582,12 @@ def get_scan_status():
                 else:
                     status_data['percentage_complete'] = 0
                 
-                status_data['elapsed_time'] = str(elapsed_time).split('.')[0]  # Remove microseconds
                 status_data['estimated_duration'] = str(avg_duration).split('.')[0]  # Remove microseconds
                 status_data['is_first_scan'] = False
             else:
                 # No previous scans to base estimate on (first scan)
                 status_data['estimated_completion'] = None
                 status_data['percentage_complete'] = None  # Hide progress bar for first scan
-                status_data['elapsed_time'] = str(datetime.now() - scanner_state['start_time']).split('.')[0]
                 status_data['estimated_duration'] = None
                 status_data['is_first_scan'] = True
         
@@ -2342,20 +2410,37 @@ def get_logs():
     try:
         lines = request.args.get('lines', 50, type=int)
         
+        # Check for running scans in database
+        running_scan = db.session.query(ScanRecord).filter(ScanRecord.status == 'running').first()
+        
         # Get current scan status
         current_scan = None
-        if scanner_state['scanning']:
-            current_scan = {
-                'status': 'scanning',
-                'scan_id': scanner_state['current_scan_id'],
-                'start_time': scanner_state['start_time'].isoformat() if scanner_state['start_time'] else None,
-                'total_files': scanner_state['total_files'],
-                'total_directories': scanner_state['total_directories'],
-                'total_size': scanner_state['total_size'],
-                'total_size_formatted': format_size(scanner_state['total_size']),
-                'current_path': scanner_state['current_path'],
-                'error': scanner_state['error']
-            }
+        if scanner_state['scanning'] or running_scan:
+            # Use scanner state if available, otherwise use database info
+            if scanner_state['scanning']:
+                current_scan = {
+                    'status': 'scanning',
+                    'scan_id': scanner_state['current_scan_id'],
+                    'start_time': scanner_state['start_time'].isoformat() if scanner_state['start_time'] else None,
+                    'total_files': scanner_state['total_files'],
+                    'total_directories': scanner_state['total_directories'],
+                    'total_size': scanner_state['total_size'],
+                    'total_size_formatted': format_size(scanner_state['total_size']),
+                    'current_path': scanner_state['current_path'],
+                    'error': scanner_state['error']
+                }
+            elif running_scan:
+                current_scan = {
+                    'status': 'scanning',
+                    'scan_id': running_scan.id,
+                    'start_time': running_scan.start_time.isoformat() if running_scan.start_time else None,
+                    'total_files': running_scan.total_files or 0,
+                    'total_directories': running_scan.total_directories or 0,
+                    'total_size': running_scan.total_size or 0,
+                    'total_size_formatted': format_size(running_scan.total_size or 0),
+                    'current_path': scanner_state.get('current_path', ''),
+                    'error': running_scan.error_message
+                }
         
         # Get recent scan history
         recent_scans = db.session.query(ScanRecord).order_by(

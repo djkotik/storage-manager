@@ -340,109 +340,44 @@ class FileScanner:
             skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
             logger.info(f"Appdata exclusion setting: {skip_appdata}")
             
-            # Function to check if a path should be excluded - EXTREMELY AGGRESSIVE
-            def should_exclude_path(path_str):
-                 """Check if a path should be excluded from scanning"""
-                 if not skip_appdata:
-                     return False
-                 
-                 path_lower = path_str.lower()
-                 
-                 # EXTREMELY AGGRESSIVE appdata detection - check ANY part of the path
-                 path_parts = path_lower.split('/')
-                 for part in path_parts:
-                     # Check for appdata variations
-                     if 'appdata' in part or 'app_data' in part or 'app-data' in part:
-                         logger.info(f"EXCLUDING appdata path (found in part '{part}'): {path_str}")
-                         return True
-                     
-                     # Also exclude common problematic directories
-                     problematic_dirs = ['cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups', 'xteve', 'plex', 'emby', 'jellyfin', 'sonarr', 'radarr', 'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 'deluge', 'qbit', 'qbittorrent']
-                     for problematic in problematic_dirs:
-                         if problematic in part:
-                             logger.info(f"EXCLUDING problematic directory (found in part '{part}'): {path_str}")
-                             return True
-                 
-                 # Additional check: if the path contains 'appdata' anywhere, exclude it
-                 if 'appdata' in path_lower:
-                     logger.info(f"EXCLUDING appdata path (found anywhere in path): {path_str}")
-                     return True
-                 
-                 return False
-            
-            # COMPLETE REWRITE: Simple and robust directory walker that completely avoids appdata
-            def safe_directory_walk(start_path):
-                """Custom directory walker that completely skips appdata directories"""
-                def walk_recursive(current_path):
-                    """Recursive walker that skips appdata"""
-                    try:
-                        # Skip if this is an appdata directory
-                        if should_exclude_path(str(current_path)):
-                            logger.info(f"SKIPPING appdata directory: {current_path}")
-                            return
-                        
-                        # Get directory contents
-                        try:
-                            items = os.listdir(current_path)
-                        except PermissionError:
-                            logger.warning(f"Permission denied: {current_path}")
-                            return
-                        except Exception as e:
-                            logger.error(f"Error reading directory {current_path}: {e}")
-                            return
-                        
-                        dirs = []
-                        files = []
-                        
-                        # Separate files and directories, filtering out appdata
-                        for item in items:
-                            item_path = os.path.join(current_path, item)
-                            try:
-                                if os.path.isdir(item_path):
-                                    # Check if this subdirectory should be skipped
-                                    if should_exclude_path(item_path):
-                                        logger.info(f"SKIPPING appdata subdirectory: {item_path}")
-                                        continue
-                                    dirs.append(item)
-                                elif os.path.isfile(item_path):
-                                    files.append(item)
-                            except Exception as e:
-                                logger.warning(f"Error checking {item_path}: {e}")
-                                continue
-                        
-                        # Yield current directory
-                        yield current_path, dirs, files
-                        
-                        # Process subdirectories
-                        for dir_name in dirs:
-                            subdir_path = os.path.join(current_path, dir_name)
-                            # Double-check before recursion
-                            if not should_exclude_path(subdir_path):
-                                yield from walk_recursive(subdir_path)
-                            else:
-                                logger.info(f"PREVENTING recursion into appdata: {subdir_path}")
-                                
-                    except Exception as e:
-                        logger.error(f"Error in walk_recursive for {current_path}: {e}")
+            # SIMPLIFIED AND AGGRESSIVE appdata exclusion function
+            def is_appdata_path(path_str):
+                """Simple check if path contains appdata - EXTREMELY AGGRESSIVE"""
+                if not skip_appdata:
+                    return False
                 
-                return walk_recursive(start_path)
+                path_lower = path_str.lower()
+                
+                # Check for ANY occurrence of appdata in the path
+                if 'appdata' in path_lower:
+                    logger.info(f"EXCLUDING appdata path: {path_str}")
+                    return True
+                
+                # Also exclude other problematic directories that might cause delays
+                problematic_patterns = [
+                    'cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups',
+                    'xteve', 'plex', 'emby', 'jellyfin', 'sonarr', 'radarr', 
+                    'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 
+                    'deluge', 'qbit', 'qbittorrent', 'docker', 'containers'
+                ]
+                
+                for pattern in problematic_patterns:
+                    if pattern in path_lower:
+                        logger.info(f"EXCLUDING problematic directory: {path_str}")
+                        return True
+                
+                return False
             
             # CRITICAL: Check if the starting path itself should be excluded
-            if should_exclude_path(str(self.data_path)):
+            if is_appdata_path(str(self.data_path)):
                 logger.error(f"Starting path {self.data_path} is excluded - cannot scan")
                 raise Exception(f"Cannot scan excluded path: {self.data_path}")
             
-            # EXTRA CRITICAL: Double-check that we're not starting in an appdata directory
-            data_path_str = str(self.data_path).lower()
-            if 'appdata' in data_path_str:
-                logger.error(f"CRITICAL ERROR: Starting path contains appdata: {self.data_path}")
-                raise Exception(f"Cannot scan path containing appdata: {self.data_path}")
-            
             # Enhanced timeout and stuck detection - ULTRA AGGRESSIVE
             last_directory_time = time.time()
-            directory_timeout = 15  # 15 seconds timeout per directory (reduced from 30)
+            directory_timeout = 10  # 10 seconds timeout per directory (reduced from 15)
             last_heartbeat = time.time()
-            heartbeat_interval = 10  # Log heartbeat every 10 seconds (reduced from 15)
+            heartbeat_interval = 5  # Log heartbeat every 5 seconds (reduced from 10)
             last_path = None
             last_path_change = time.time()
             
@@ -452,24 +387,28 @@ class FileScanner:
             
             # Track progress logging
             last_progress_log = time.time()
-            progress_log_interval = 20  # Log progress every 20 seconds (reduced from 30)
+            progress_log_interval = 10  # Log progress every 10 seconds (reduced from 20)
             
             # Track stuck detection - ULTRA AGGRESSIVE
-            stuck_timeout = 30  # 30 seconds without path change (reduced from 60)
+            stuck_timeout = 20  # 20 seconds without path change (reduced from 30)
             
             # Database cleanup tracking
             last_db_cleanup = time.time()
             db_cleanup_interval = 300  # Clean up database connections every 5 minutes
             
-            # Main scanning loop using custom safe_directory_walk
-            for root, dirs, files in safe_directory_walk(self.data_path):
+            # COMPLETE REWRITE: Use os.walk with aggressive filtering
+            logger.info("Starting directory walk with aggressive appdata exclusion...")
+            
+            for root, dirs, files in os.walk(self.data_path):
                 if self.stop_scan:
                     logger.info("Scan stopped by user request")
                     break
                 
-                # CRITICAL: Double-check that we're not processing an appdata directory
-                if should_exclude_path(root):
-                    logger.error(f"CRITICAL: Somehow entered appdata directory: {root} - SKIPPING")
+                # CRITICAL: Check if current directory should be excluded
+                if is_appdata_path(root):
+                    logger.info(f"SKIPPING excluded directory: {root}")
+                    # Remove all subdirectories to prevent recursion
+                    dirs.clear()
                     continue
                 
                 # Check for directory timeout
@@ -478,6 +417,8 @@ class FileScanner:
                     logger.error(f"Directory timeout: {root} has been processing for {directory_timeout} seconds")
                     # Force skip this directory and continue
                     logger.info(f"FORCED SKIP of timeout directory: {root}")
+                    dirs.clear()
+                    files.clear()
                     continue
                 last_directory_time = current_time
                     
@@ -490,8 +431,8 @@ class FileScanner:
                     last_path_change = current_time
                     logger.info(f"Processing directory: {root}")
                     
-                    # Log progress every 1000 directories
-                    if total_directories % 1000 == 0:
+                    # Log progress every 500 directories
+                    if total_directories % 500 == 0:
                         elapsed_time = current_time - self.scan_start_time
                         logger.info(f"=== SCAN PROGRESS ===")
                         logger.info(f"Files processed: {total_files:,}")
@@ -511,7 +452,7 @@ class FileScanner:
                         continue
                 
                 # Force skip any directory that has been processing for too long (emergency escape)
-                if current_time - last_directory_time > 15:  # 15 seconds per directory max (reduced from 30)
+                if current_time - last_directory_time > 10:  # 10 seconds per directory max (reduced from 15)
                     logger.error(f"Directory processing timeout exceeded: {root} - forcing skip")
                     dirs.clear()
                     files.clear()
@@ -522,24 +463,24 @@ class FileScanner:
                 logger.info(f"Processing directory: {root} (contains {len(dirs)} subdirs, {len(files)} files)")
                 
                 # Skip very large directories that might cause delays
-                if len(files) > 50000:
+                if len(files) > 10000:
                     logger.warning(f"SKIPPING extremely large directory: {root} contains {len(files):,} files - skipping to avoid delays")
                     dirs.clear()
                     files.clear()
                     continue
-                if len(dirs) > 5000:
+                if len(dirs) > 1000:
                     logger.warning(f"SKIPPING extremely deep directory: {root} contains {len(dirs):,} subdirectories - skipping to avoid delays")
                     dirs.clear()
                     files.clear()
                     continue
                 
                 # Warn about large directories that might cause delays
-                if len(files) > 10000:
+                if len(files) > 5000:
                     logger.warning(f"Large directory detected: {root} contains {len(files):,} files - this may take a while")
-                if len(dirs) > 1000:
+                if len(dirs) > 500:
                     logger.warning(f"Deep directory structure detected: {root} contains {len(dirs):,} subdirectories - this may take a while")
                 
-                # Heartbeat log every 30 seconds
+                # Heartbeat log every 5 seconds
                 if current_time - last_heartbeat > heartbeat_interval:
                     elapsed_time = current_time - self.scan_start_time
                     logger.info(f"Scan heartbeat: Still processing {root} (total: {total_files:,} files, {total_directories:,} dirs, {format_size(total_size)}, elapsed: {self._format_duration(elapsed_time)})")
@@ -571,6 +512,12 @@ class FileScanner:
                 for dir_name in dirs:
                     try:
                         dir_path = Path(root) / dir_name
+                        
+                        # DOUBLE CHECK: Make sure we're not processing an appdata directory
+                        if is_appdata_path(str(dir_path)):
+                            logger.info(f"SKIPPING appdata subdirectory: {dir_path}")
+                            continue
+                        
                         stat = dir_path.stat()
                         
                         file_record = FileRecord(
@@ -597,6 +544,12 @@ class FileScanner:
                 for file_name in files:
                     try:
                         file_path = Path(root) / file_name
+                        
+                        # DOUBLE CHECK: Make sure we're not processing an appdata file
+                        if is_appdata_path(str(file_path)):
+                            logger.info(f"SKIPPING appdata file: {file_path}")
+                            continue
+                        
                         stat = file_path.stat()
                         
                         # Get file extension

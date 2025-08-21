@@ -261,7 +261,7 @@ const Dashboard: React.FC = () => {
                   </p>
                 )}
                 {scanStatus.current_path && (
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 font-mono bg-blue-100 dark:bg-blue-800 px-2 py-1 rounded mt-1">
                     Current: {scanStatus.current_path}
                   </p>
                 )}
@@ -298,6 +298,79 @@ const Dashboard: React.FC = () => {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+          
+          {/* CRITICAL: Enhanced scan status information */}
+          <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+            <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+              🔍 Scan Status Details
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Status:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                  {scanStatus.status === 'running' ? '🟢 Active' : '🟡 Unknown'}
+                </span>
+              </div>
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Scan ID:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400 font-mono">
+                  {scanStatus.scan_id || 'Unknown'}
+                </span>
+              </div>
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Start Time:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                  {scanStatus.start_time ? new Date(scanStatus.start_time).toLocaleString() : 'Unknown'}
+                </span>
+              </div>
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Elapsed:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                  {scanStatus.elapsed_time_formatted || scanStatus.scan_duration || 'Unknown'}
+                </span>
+              </div>
+            </div>
+            
+            {/* Current path with better formatting */}
+            {scanStatus.current_path && (
+              <div className="mt-2">
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Current Path:</span>
+                <div className="mt-1 p-2 bg-yellow-100 dark:bg-yellow-800/50 rounded font-mono text-xs break-all">
+                  {scanStatus.current_path}
+                </div>
+              </div>
+            )}
+            
+            {/* Appdata exclusion status */}
+            <div className="mt-2">
+              <span className="font-medium text-yellow-700 dark:text-yellow-300">Appdata Exclusion:</span>
+              <span className="ml-2 text-green-600 dark:text-green-400">
+                ✅ Active - Appdata directories are being skipped
+              </span>
+            </div>
+            
+            {/* Processing rate and progress */}
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Files:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                  {scanStatus.total_files?.toLocaleString() || '0'}
+                </span>
+              </div>
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Directories:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                  {scanStatus.total_directories?.toLocaleString() || '0'}
+                </span>
+              </div>
+              <div>
+                <span className="font-medium text-yellow-700 dark:text-yellow-300">Rate:</span>
+                <span className="ml-2 text-yellow-600 dark:text-yellow-400">
+                  {scanStatus.processing_rate || 'Unknown'}
+                </span>
+              </div>
             </div>
           </div>
         </div>

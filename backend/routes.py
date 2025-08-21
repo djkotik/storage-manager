@@ -85,7 +85,23 @@ def register_routes(app):
     def force_reset_scan():
         """Force reset scanner state and clear any stuck scans"""
         try:
+            # Mark any running scans as failed
+            running_scans = ScanRecord.query.filter_by(status='in_progress').all()
+            for scan in running_scans:
+                scan.status = 'failed'
+                scan.error_message = 'Force reset by user'
+                scan.end_time = datetime.utcnow()
+            
+            # Clear any partial folder calculations for failed scans
+            for scan in running_scans:
+                FolderInfo.query.filter_by(scan_id=scan.id).delete()
+            
+            db.session.commit()
+            
+            # Force reset the scanner
             scanner.force_reset()
+            
+            logger.info("Scanner force reset completed with folder cleanup")
             return jsonify({'message': 'Scanner force reset completed'})
         except Exception as e:
             logger.error(f"Error force resetting scanner: {e}")
