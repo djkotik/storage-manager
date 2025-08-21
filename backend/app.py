@@ -86,18 +86,14 @@ logger.info("Starting application initialization...")
 app = Flask(__name__) # Removed static_folder and static_url_path
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////app/data/storage_analyzer.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///storage_manager.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,
-    'pool_recycle': 300,
-    'pool_size': 20,  # Increased from default 5
-    'max_overflow': 30,  # Increased from default 10
-    'pool_timeout': 60,  # Increased timeout
-    'connect_args': {
-        'timeout': 60,  # Increased from 30
-        'check_same_thread': False
-    }
+    'pool_size': 50,  # Increased from default 20
+    'pool_timeout': 120,  # Increased timeout
+    'pool_recycle': 3600,  # Recycle connections every hour
+    'max_overflow': 100,  # Increased from default 30
+    'pool_pre_ping': True,  # Test connections before use
 }
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
