@@ -226,78 +226,121 @@ class FileScanner:
 
     def get_scan_status(self) -> Dict:
         """Get current scan status"""
-        if not self.current_scan:
-            return {'status': 'idle'}
-        
-        # Ensure we have the current scan record from database
-        try:
-            current_scan_from_db = ScanRecord.query.get(self.current_scan.id)
-            if current_scan_from_db and current_scan_from_db.status != 'running':
-                logger.warning(f"Scan {self.current_scan.id} status is {current_scan_from_db.status}, not running")
-                return {'status': 'idle'}
-        except Exception as e:
-            logger.warning(f"Error checking scan status from database: {e}")
-        
-        # Calculate elapsed time - add debugging
-        if self.scan_start_time is None:
-            logger.warning("scan_start_time is None - this should not happen during active scan")
-            elapsed_time = 0
-        else:
-            elapsed_time = time.time() - self.scan_start_time
-            logger.debug(f"Elapsed time calculation: {time.time()} - {self.scan_start_time} = {elapsed_time}")
-        
-        current_path = getattr(self, 'current_path', 'Unknown')
-        
-        # Get current progress from in-memory variables (more accurate than database)
-        total_files = getattr(self, '_total_files', self.current_scan.total_files or 0)
-        total_directories = getattr(self, '_total_directories', self.current_scan.total_directories or 0)
-        total_size = getattr(self, '_total_size', self.current_scan.total_size or 0)
-        
-        # Calculate processing rate
-        processing_rate = None
-        if elapsed_time > 0 and total_files > 0:
-            files_per_second = total_files / elapsed_time
-            processing_rate = f"{files_per_second:.1f} files/sec"
-        
-        # Estimate completion time based on current progress
-        estimated_completion = None
-        progress_percentage = 0
-        if total_directories > 0 and elapsed_time > 0:
-            # Rough estimate: assume 210,006 total directories based on logs
-            total_estimated_dirs = 210006
-            progress_percentage = min(100, (total_directories / total_estimated_dirs) * 100)
+        # First check if we have an active scan in memory
+        if self.current_scan and self.scanning:
+            # Ensure we have the current scan record from database
+            try:
+                current_scan_from_db = ScanRecord.query.get(self.current_scan.id)
+                if current_scan_from_db and current_scan_from_db.status != 'running':
+                    logger.warning(f"Scan {self.current_scan.id} status is {current_scan_from_db.status}, not running")
+                    # Reset our state since scan is no longer running
+                    self.scanning = False
+                    self.current_scan = None
+                    return {'status': 'idle'}
+            except Exception as e:
+                logger.warning(f"Error checking scan status from database: {e}")
             
-            if progress_percentage > 0:
-                estimated_total_time = elapsed_time / (progress_percentage / 100)
-                estimated_remaining = estimated_total_time - elapsed_time
-                estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
+            # Calculate elapsed time - add debugging
+            if self.scan_start_time is None:
+                logger.warning("scan_start_time is None - this should not happen during active scan")
+                elapsed_time = 0
+            else:
+                elapsed_time = time.time() - self.scan_start_time
+                logger.debug(f"Elapsed time calculation: {time.time()} - {self.scan_start_time} = {elapsed_time}")
+            
+            current_path = getattr(self, 'current_path', 'Unknown')
+            
+            # Get current progress from in-memory variables (more accurate than database)
+            total_files = getattr(self, '_total_files', self.current_scan.total_files or 0)
+            total_directories = getattr(self, '_total_directories', self.current_scan.total_directories or 0)
+            total_size = getattr(self, '_total_size', self.current_scan.total_size or 0)
+            
+            # Calculate processing rate
+            processing_rate = None
+            if elapsed_time > 0 and total_files > 0:
+                files_per_second = total_files / elapsed_time
+                processing_rate = f"{files_per_second:.1f} files/sec"
+            
+            # Estimate completion time based on current progress
+            estimated_completion = None
+            progress_percentage = 0
+            if total_directories > 0 and elapsed_time > 0:
+                # Rough estimate: assume 210,006 total directories based on logs
+                total_estimated_dirs = 210006
+                progress_percentage = min(100, (total_directories / total_estimated_dirs) * 100)
+                
+                if progress_percentage > 0:
+                    estimated_total_time = elapsed_time / (progress_percentage / 100)
+                    estimated_remaining = estimated_total_time - elapsed_time
+                    estimated_completion = datetime.fromtimestamp(time.time() + estimated_remaining)
+            
+            # Format scan duration for display
+            scan_duration = self._format_duration(elapsed_time)
+            
+            response_data = {
+                'scan_id': self.current_scan.id,
+                'status': self.current_scan.status,
+                'start_time': self.current_scan.start_time.isoformat(),
+                'end_time': self.current_scan.end_time.isoformat() if self.current_scan.end_time else None,
+                'total_files': total_files,
+                'total_directories': total_directories,
+                'total_size': total_size,
+                'total_size_formatted': format_size(total_size),
+                'scanning': self.scanning,
+                'elapsed_time': elapsed_time,
+                'elapsed_time_formatted': scan_duration,
+                'current_path': current_path,
+                'estimated_completion': estimated_completion.isoformat() if estimated_completion else None,
+                'progress_percentage': progress_percentage,
+                'processing_rate': processing_rate,
+                'scan_duration': scan_duration  # Ensure this is always set
+            }
+            
+            # Add debugging information
+            logger.debug(f"Scan status response: elapsed_time={elapsed_time}, scan_duration='{scan_duration}', elapsed_time_formatted='{scan_duration}'")
+            
+            return response_data
         
-        # Format scan duration for display
-        scan_duration = self._format_duration(elapsed_time)
+        # If no active scan in memory, check for recent scan activity in database
+        try:
+            # Look for the most recent scan (completed, failed, or stopped)
+            recent_scan = ScanRecord.query.order_by(ScanRecord.start_time.desc()).first()
+            
+            if recent_scan:
+                # If the scan was very recent (within last 5 minutes) and failed, show it
+                time_since_scan = (datetime.utcnow() - recent_scan.start_time).total_seconds()
+                
+                if time_since_scan < 300:  # 5 minutes
+                    if recent_scan.status in ['failed', 'stopped']:
+                        logger.info(f"Recent scan {recent_scan.id} {recent_scan.status} - showing status")
+                        
+                        # Calculate duration
+                        if recent_scan.end_time:
+                            duration = (recent_scan.end_time - recent_scan.start_time).total_seconds()
+                        else:
+                            duration = time_since_scan
+                        
+                        return {
+                            'status': recent_scan.status,
+                            'scan_id': recent_scan.id,
+                            'start_time': recent_scan.start_time.isoformat(),
+                            'end_time': recent_scan.end_time.isoformat() if recent_scan.end_time else None,
+                            'total_files': recent_scan.total_files or 0,
+                            'total_directories': recent_scan.total_directories or 0,
+                            'total_size': recent_scan.total_size or 0,
+                            'total_size_formatted': format_size(recent_scan.total_size or 0),
+                            'scanning': False,
+                            'elapsed_time': duration,
+                            'elapsed_time_formatted': self._format_duration(duration),
+                            'current_path': 'Scan completed',
+                            'error_message': recent_scan.error_message,
+                            'scan_duration': self._format_duration(duration)
+                        }
+        except Exception as e:
+            logger.warning(f"Error checking recent scan activity: {e}")
         
-        response_data = {
-            'scan_id': self.current_scan.id,
-            'status': self.current_scan.status,
-            'start_time': self.current_scan.start_time.isoformat(),
-            'end_time': self.current_scan.end_time.isoformat() if self.current_scan.end_time else None,
-            'total_files': total_files,
-            'total_directories': total_directories,
-            'total_size': total_size,
-            'total_size_formatted': format_size(total_size),
-            'scanning': self.scanning,
-            'elapsed_time': elapsed_time,
-            'elapsed_time_formatted': scan_duration,
-            'current_path': current_path,
-            'estimated_completion': estimated_completion.isoformat() if estimated_completion else None,
-            'progress_percentage': progress_percentage,
-            'processing_rate': processing_rate,
-            'scan_duration': scan_duration  # Ensure this is always set
-        }
-        
-        # Add debugging information
-        logger.debug(f"Scan status response: elapsed_time={elapsed_time}, scan_duration='{scan_duration}', elapsed_time_formatted='{scan_duration}'")
-        
-        return response_data
+        # No active or recent scan found
+        return {'status': 'idle'}
     
     def _format_duration(self, seconds: float) -> str:
         """Format duration in seconds to human readable format"""
@@ -736,14 +779,34 @@ class FileScanner:
             logger.error(f"Exception type: {type(e).__name__}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Ensure the scan record is properly updated with error information
             if self.current_scan:
-                self.current_scan.status = 'failed'
-                self.current_scan.error_message = str(e)
-                self.current_scan.end_time = datetime.utcnow()
-                db.session.commit()
+                try:
+                    # Get the current scan from database to ensure we have the latest
+                    scan_record = ScanRecord.query.get(self.current_scan.id)
+                    if scan_record:
+                        scan_record.status = 'failed'
+                        scan_record.error_message = f"Scan failed: {str(e)}"
+                        scan_record.end_time = datetime.utcnow()
+                        db.session.commit()
+                        logger.info(f"Scan record updated with error: ID {scan_record.id}")
+                    else:
+                        logger.error("Could not find scan record in database to update")
+                except Exception as db_error:
+                    logger.error(f"Error updating scan record with error: {db_error}")
+                    # Try to rollback and continue
+                    try:
+                        db.session.rollback()
+                    except:
+                        pass
         finally:
             logger.info(f"=== SCANNER THREAD ENDING ===")
+            # Clean up scan state
+            logger.info("Cleaning up scan state...")
             self.scanning = False
+            self.current_scan = None
+            logger.info("Scan state cleaned up")
 
     def _extract_media_metadata(self, file_record: FileRecord, file_path: Path):
         """Extract metadata from media files"""
