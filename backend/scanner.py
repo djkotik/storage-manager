@@ -16,9 +16,9 @@ import re
 # from mutagen.mp3 import MP3
 # from mutagen.oggvorbis import OggVorbis
 
-from models import FileRecord, ScanRecord, MediaFile, StorageHistory
+from models import FileRecord, MediaFile, StorageHistory
 
-# Import db from Flask app - this should work within app context
+# Import db and models from Flask app - this should work within app context  
 from app import db
 
 # Global scanner state reference
@@ -116,7 +116,9 @@ class FileScanner:
             
         # Mark any existing running scans as failed
         try:
-            running_scans = ScanRecord.query.filter_by(status='running').all()
+            # Import ScanRecord locally to avoid circular imports
+            from app import ScanRecord
+            running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
             for scan in running_scans:
                 scan.status = 'failed'
                 scan.error_message = 'Superseded by new scan'
@@ -140,6 +142,7 @@ class FileScanner:
         logger.info(f"Set scan_start_time to: {self.scan_start_time}")
         
         # Create scan record
+        from app import ScanRecord
         self.current_scan = ScanRecord(
             start_time=datetime.utcnow(),
             status='running'
@@ -173,7 +176,8 @@ class FileScanner:
         
         # Force stop any running scan in database
         try:
-            running_scans = ScanRecord.query.filter_by(status='running').all()
+            from app import ScanRecord
+            running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
             for scan in running_scans:
                 scan.status = 'stopped'
                 scan.error_message = 'Stopped by user request'
@@ -200,7 +204,8 @@ class FileScanner:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                running_scans = ScanRecord.query.filter_by(status='running').all()
+                from app import ScanRecord
+                running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
                 for scan in running_scans:
                     scan.status = 'failed'
                     scan.error_message = 'Force reset by user'
@@ -244,7 +249,8 @@ class FileScanner:
         if self.current_scan and self.scanning:
             # Ensure we have the current scan record from database
             try:
-                current_scan_from_db = ScanRecord.query.get(self.current_scan.id)
+                from app import ScanRecord
+                current_scan_from_db = db.session.query(ScanRecord).get(self.current_scan.id)
                 if current_scan_from_db and current_scan_from_db.status != 'running':
                     logger.warning(f"Scan {self.current_scan.id} status is {current_scan_from_db.status}, not running")
                     # Reset our state since scan is no longer running
@@ -318,7 +324,8 @@ class FileScanner:
         # If no active scan in memory, check for recent scan activity in database
         try:
             # Look for the most recent scan (completed, failed, or stopped)
-            recent_scan = ScanRecord.query.order_by(ScanRecord.start_time.desc()).first()
+            from app import ScanRecord
+            recent_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
             
             if recent_scan:
                 # If the scan was very recent (within last 5 minutes) and failed, show it
@@ -721,7 +728,8 @@ class FileScanner:
                         from flask import current_app
                         current_app.extensions['sqlalchemy']
                         # We have app context, proceed normally
-                        scan_record = ScanRecord.query.get(self.current_scan.id)
+                        from app import ScanRecord
+                        scan_record = db.session.query(ScanRecord).get(self.current_scan.id)
                         if scan_record:
                             scan_record.status = 'failed'
                             scan_record.error_message = f"Scan failed: {str(e)}"
@@ -732,7 +740,8 @@ class FileScanner:
                         # No app context, create one
                         from app import app
                         with app.app_context():
-                            scan_record = ScanRecord.query.get(self.current_scan.id)
+                            from app import ScanRecord
+                            scan_record = db.session.query(ScanRecord).get(self.current_scan.id)
                             if scan_record:
                                 scan_record.status = 'failed'
                                 scan_record.error_message = f"Scan failed: {str(e)}"
