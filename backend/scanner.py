@@ -21,6 +21,9 @@ from models import FileRecord, ScanRecord, MediaFile, StorageHistory
 # Import db from Flask app - this should work within app context
 from app import db
 
+# Global scanner state reference
+scanner_state = None
+
 # Import get_setting function
 def get_setting(key, default=None):
     """Get setting from database or environment"""
@@ -158,6 +161,15 @@ class FileScanner:
         """Stop the current scan"""
         self.stop_scan = True
         logger.info("Scan stop requested")
+    
+    def update_scanner_state(self, total_files, total_directories, total_size, current_path):
+        """Update global scanner state for dashboard display"""
+        global scanner_state
+        if scanner_state is not None:
+            scanner_state['total_files'] = total_files
+            scanner_state['total_directories'] = total_directories
+            scanner_state['total_size'] = total_size
+            scanner_state['current_path'] = current_path
         
         # Force stop any running scan in database
         try:
@@ -612,6 +624,10 @@ class FileScanner:
                                 self.current_scan.total_directories = total_directories
                                 self.current_scan.total_size = total_size
                                 db.session.commit()
+                                
+                                # CRITICAL: Update global scanner_state for dashboard display
+                                self.update_scanner_state(total_files, total_directories, total_size, share_path)
+                                
                                 last_update_time = current_time
                                 logger.debug(f"Updated scan progress: {total_files} files, {total_directories} dirs, {format_size(total_size)}")
                             except Exception as e:
@@ -637,19 +653,40 @@ class FileScanner:
                     logger.error(f"Error scanning share {share_name}: {e}")
                     continue
             
-            # Final commit
+            # Final commit with Flask context protection
             try:
-                self.current_scan.total_files = total_files
-                self.current_scan.total_directories = total_directories
-                self.current_scan.total_size = total_size
-                self.current_scan.status = 'completed'
-                self.current_scan.end_time = datetime.utcnow()
-                db.session.commit()
+                # Ensure we're in Flask context for final operations
+                try:
+                    from flask import current_app
+                    # Test if we have current app context
+                    current_app.extensions['sqlalchemy']
+                except RuntimeError:
+                    # No app context, we need to create one
+                    from app import app
+                    with app.app_context():
+                        self.current_scan.total_files = total_files
+                        self.current_scan.total_directories = total_directories
+                        self.current_scan.total_size = total_size
+                        self.current_scan.status = 'completed'
+                        self.current_scan.end_time = datetime.utcnow()
+                        db.session.commit()
+                else:
+                    # We have app context, proceed normally
+                    self.current_scan.total_files = total_files
+                    self.current_scan.total_directories = total_directories
+                    self.current_scan.total_size = total_size
+                    self.current_scan.status = 'completed'
+                    self.current_scan.end_time = datetime.utcnow()
+                    db.session.commit()
+                    
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
             except Exception as e:
                 logger.error(f"Error finalizing scan: {e}")
-                db.session.rollback()
-                raise
+                try:
+                    db.session.rollback()
+                except:
+                    logger.error("Failed to rollback session")
+                # Don't raise - we want to continue cleanup
             
         except Exception as e:
             logger.error(f"Scan failed: {e}")
@@ -660,14 +697,29 @@ class FileScanner:
             # Ensure the scan record is properly updated with error information
             if self.current_scan:
                 try:
-                    # Get the current scan from database to ensure we have the latest
-                    scan_record = ScanRecord.query.get(self.current_scan.id)
-                    if scan_record:
-                        scan_record.status = 'failed'
-                        scan_record.error_message = f"Scan failed: {str(e)}"
-                        scan_record.end_time = datetime.utcnow()
-                        db.session.commit()
-                        logger.info(f"Updated scan {scan_record.id} status to failed")
+                    # Ensure we're in Flask context for database operations
+                    try:
+                        from flask import current_app
+                        current_app.extensions['sqlalchemy']
+                        # We have app context, proceed normally
+                        scan_record = ScanRecord.query.get(self.current_scan.id)
+                        if scan_record:
+                            scan_record.status = 'failed'
+                            scan_record.error_message = f"Scan failed: {str(e)}"
+                            scan_record.end_time = datetime.utcnow()
+                            db.session.commit()
+                            logger.info(f"Updated scan {scan_record.id} status to failed")
+                    except RuntimeError:
+                        # No app context, create one
+                        from app import app
+                        with app.app_context():
+                            scan_record = ScanRecord.query.get(self.current_scan.id)
+                            if scan_record:
+                                scan_record.status = 'failed'
+                                scan_record.error_message = f"Scan failed: {str(e)}"
+                                scan_record.end_time = datetime.utcnow()
+                                db.session.commit()
+                                logger.info(f"Updated scan {scan_record.id} status to failed")
                 except Exception as db_error:
                     logger.error(f"Error updating failed scan record: {db_error}")
             

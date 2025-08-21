@@ -208,6 +208,10 @@ def run_scheduled_scan():
         from scanner import FileScanner
         scanner = FileScanner(data_path, max_duration=max_duration)
         
+        # CRITICAL: Pass global scanner_state reference for dashboard updates
+        import scanner as scanner_module
+        scanner_module.scanner_state = scanner_state
+        
         # Set global reference for stop functionality
         global current_scanner_instance
         current_scanner_instance = scanner
@@ -1463,6 +1467,10 @@ def start_scan():
         # Import and use the new scanner
         from scanner import FileScanner
         scanner = FileScanner(data_path, max_duration=6)
+        
+        # CRITICAL: Pass global scanner_state reference for dashboard updates
+        import scanner as scanner_module
+        scanner_module.scanner_state = scanner_state
         
         # Set global reference for stop functionality
         global current_scanner_instance
