@@ -16,8 +16,10 @@ import re
 # from mutagen.mp3 import MP3
 # from mutagen.oggvorbis import OggVorbis
 
-from app import db
 from models import FileRecord, ScanRecord, MediaFile, StorageHistory
+
+# Import db from Flask app - this should work within app context
+from app import db
 
 # Import get_setting function
 def get_setting(key, default=None):
