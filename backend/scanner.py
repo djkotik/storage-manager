@@ -446,6 +446,8 @@ class FileScanner:
     
     def _scan_filesystem_with_context(self):
         """Main scanning implementation - assumes Flask context is available"""
+        global scanner_state
+        
         try:
             total_files = 0
             total_directories = 0
@@ -782,7 +784,6 @@ class FileScanner:
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
                 
                 # CRITICAL: Update global scanner_state on successful completion
-                global scanner_state
                 if scanner_state is not None:
                     scanner_state['scanning'] = False
                     scanner_state['current_path'] = 'Scan completed'
@@ -842,7 +843,6 @@ class FileScanner:
             self.current_scan = None
             
             # CRITICAL: Update global scanner_state to show scan is no longer running
-            global scanner_state
             if scanner_state is not None:
                 scanner_state['scanning'] = False
                 scanner_state['current_path'] = ''
