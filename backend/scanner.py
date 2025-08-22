@@ -671,11 +671,15 @@ class FileScanner:
                                 stat = os.stat(file_path)
                                 file_size = stat.st_size
                                 
+                                # Extract file extension
+                                file_extension = Path(file_path).suffix.lower() if Path(file_path).suffix else None
+                                
                                 # Create file record
                                 file_record = FileRecord(
                                     path=file_path,
                                     name=file_name,
                                     size=file_size,
+                                    extension=file_extension,
                                     parent_path=root,
                                     scan_id=self.current_scan_id
                                 )
@@ -782,6 +786,18 @@ class FileScanner:
                         db.session.commit()
                     
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
+                
+                # Post-scan processing - ensure we have Flask context
+                try:
+                    from flask import current_app
+                    current_app.extensions['sqlalchemy']
+                    # We have app context, proceed with post-processing
+                    self._run_post_scan_processing(total_files, total_directories, total_size)
+                except RuntimeError:
+                    # No app context, create one for post-processing
+                    from app import app
+                    with app.app_context():
+                        self._run_post_scan_processing(total_files, total_directories, total_size)
                 
                 # CRITICAL: Update global scanner_state on successful completion
                 if scanner_state is not None:
@@ -962,4 +978,45 @@ class FileScanner:
             return hash_sha256.hexdigest()
         except Exception as e:
             logger.error(f"Error calculating hash for {file_path}: {e}")
-            return None 
+            return None
+    
+    def _run_post_scan_processing(self, total_files, total_directories, total_size):
+        """Run post-scan processing: folder calculations, duplicates, and storage history"""
+        try:
+            # Calculate comprehensive folder totals FIRST
+            logger.info("Calculating folder totals...")
+            try:
+                from app import calculate_folder_totals_during_scan
+                calculate_folder_totals_during_scan(str(self.data_path), self.current_scan_id)
+                logger.info("Folder totals calculated successfully")
+            except Exception as e:
+                logger.error(f"Error calculating folder totals: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error details: {str(e)}")
+                # Continue with the scan even if folder totals fail
+                logger.warning("Continuing scan without folder totals...")
+            
+            # Detect duplicates
+            logger.info("Starting duplicate detection...")
+            try:
+                from app import detect_duplicates
+                detect_duplicates(self.current_scan_id)
+                logger.info("Duplicate detection completed")
+            except Exception as e:
+                logger.error(f"Error detecting duplicates: {e}")
+                logger.warning("Continuing scan without duplicate detection...")
+            
+            # Save storage history
+            logger.info("Saving storage history...")
+            try:
+                from app import save_storage_history
+                save_storage_history(self.current_scan_id)
+                logger.info("Storage history saved")
+            except Exception as e:
+                logger.error(f"Error saving storage history: {e}")
+                logger.warning("Continuing scan without storage history...")
+                
+        except Exception as e:
+            logger.error(f"Error during post-scan processing: {e}")
+            # Don't fail the entire scan for post-processing errors
+            logger.warning("Post-scan processing failed, but scan data is preserved") 
