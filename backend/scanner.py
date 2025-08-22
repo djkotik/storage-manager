@@ -116,15 +116,30 @@ class FileScanner:
             
         # Mark any existing running scans as failed
         try:
-            # Import ScanRecord locally to avoid circular imports
-            from app import ScanRecord
-            running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
-            for scan in running_scans:
-                scan.status = 'failed'
-                scan.error_message = 'Superseded by new scan'
-                scan.end_time = datetime.utcnow()
-            db.session.commit()
-            logger.info(f"Marked {len(running_scans)} existing running scans as failed")
+            # Ensure Flask context for database operations
+            try:
+                from flask import current_app
+                current_app.extensions['sqlalchemy']
+                # We have Flask context, proceed normally
+                from app import ScanRecord
+                running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
+                for scan in running_scans:
+                    scan.status = 'failed'
+                    scan.error_message = 'Superseded by new scan'
+                    scan.end_time = datetime.utcnow()
+                db.session.commit()
+                logger.info(f"Marked {len(running_scans)} existing running scans as failed")
+            except RuntimeError:
+                # No Flask context, create one
+                from app import app, ScanRecord
+                with app.app_context():
+                    running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
+                    for scan in running_scans:
+                        scan.status = 'failed'
+                        scan.error_message = 'Superseded by new scan'
+                        scan.end_time = datetime.utcnow()
+                    db.session.commit()
+                    logger.info(f"Marked {len(running_scans)} existing running scans as failed")
         except Exception as e:
             logger.error(f"Error cleaning up old scans: {e}")
         
@@ -142,13 +157,32 @@ class FileScanner:
         logger.info(f"Set scan_start_time to: {self.scan_start_time}")
         
         # Create scan record
-        from app import ScanRecord
-        self.current_scan = ScanRecord(
-            start_time=datetime.utcnow(),
-            status='running'
-        )
-        db.session.add(self.current_scan)
-        db.session.commit()
+        try:
+            # Ensure Flask context for database operations
+            try:
+                from flask import current_app
+                current_app.extensions['sqlalchemy']
+                # We have Flask context, proceed normally
+                from app import ScanRecord
+                self.current_scan = ScanRecord(
+                    start_time=datetime.utcnow(),
+                    status='running'
+                )
+                db.session.add(self.current_scan)
+                db.session.commit()
+            except RuntimeError:
+                # No Flask context, create one
+                from app import app, ScanRecord
+                with app.app_context():
+                    self.current_scan = ScanRecord(
+                        start_time=datetime.utcnow(),
+                        status='running'
+                    )
+                    db.session.add(self.current_scan)
+                    db.session.commit()
+        except Exception as e:
+            logger.error(f"Error creating scan record: {e}")
+            raise
         
         # Start scan in background thread
         logger.info(f"About to start scan thread for scan ID {self.current_scan.id}")
