@@ -422,6 +422,30 @@ class FileScanner:
         logger.info(f"Thread ID: {threading.current_thread().ident}")
         logger.info(f"Starting filesystem scan of {self.data_path}")
         
+        # Ensure Flask context for the entire scanning process
+        try:
+            from flask import current_app
+            current_app.extensions['sqlalchemy']
+            # We have Flask context, proceed normally
+            logger.info("Scanner thread has Flask context")
+        except RuntimeError:
+            # No Flask context, create one for the entire method
+            from app import app
+            logger.info("Scanner thread creating Flask context")
+            with app.app_context():
+                return self._scan_filesystem_with_context()
+        except Exception as e:
+            logger.error(f"Error checking Flask context: {e}")
+            # Try to create context anyway
+            from app import app
+            with app.app_context():
+                return self._scan_filesystem_with_context()
+                
+        # If we have context, proceed normally
+        return self._scan_filesystem_with_context()
+    
+    def _scan_filesystem_with_context(self):
+        """Main scanning implementation - assumes Flask context is available"""
         try:
             total_files = 0
             total_directories = 0
