@@ -54,6 +54,7 @@ class FileScanner:
         self.max_duration = max_duration * 3600  # Convert to seconds
         self.scan_start_time = None
         self.current_scan = None
+        self.current_scan_id = None
         self.scanning = False
         self.stop_scan = False
         
@@ -147,6 +148,7 @@ class FileScanner:
         self.scanning = False
         self.stop_scan = False
         self.current_scan = None
+        self.current_scan_id = None
         self.scan_start_time = None
         self.current_path = None
         
@@ -170,6 +172,8 @@ class FileScanner:
                 )
                 db.session.add(self.current_scan)
                 db.session.commit()
+                # Store the scan ID for later reference
+                self.current_scan_id = self.current_scan.id
             except RuntimeError:
                 # No Flask context, create one
                 from app import app, ScanRecord
@@ -180,19 +184,21 @@ class FileScanner:
                     )
                     db.session.add(self.current_scan)
                     db.session.commit()
+                    # Store the scan ID for later reference
+                    self.current_scan_id = self.current_scan.id
         except Exception as e:
             logger.error(f"Error creating scan record: {e}")
             raise
         
         # Start scan in background thread
-        logger.info(f"About to start scan thread for scan ID {self.current_scan.id}")
+        logger.info(f"About to start scan thread for scan ID {self.current_scan_id}")
         scan_thread = threading.Thread(target=self._scan_filesystem)
         scan_thread.daemon = True
         scan_thread.start()
-        logger.info(f"Scan thread started successfully for scan ID {self.current_scan.id}")
+        logger.info(f"Scan thread started successfully for scan ID {self.current_scan_id}")
         
-        logger.info(f"Started scan session {self.current_scan.id}")
-        return self.current_scan.id
+        logger.info(f"Started scan session {self.current_scan_id}")
+        return self.current_scan_id
 
     def stop_current_scan(self):
         """Stop the current scan"""
@@ -284,9 +290,9 @@ class FileScanner:
             # Ensure we have the current scan record from database
             try:
                 from app import ScanRecord
-                current_scan_from_db = db.session.query(ScanRecord).get(self.current_scan.id)
+                current_scan_from_db = db.session.query(ScanRecord).get(self.current_scan_id)
                 if current_scan_from_db and current_scan_from_db.status != 'running':
-                    logger.warning(f"Scan {self.current_scan.id} status is {current_scan_from_db.status}, not running")
+                    logger.warning(f"Scan {self.current_scan_id} status is {current_scan_from_db.status}, not running")
                     # Reset our state since scan is no longer running
                     self.scanning = False
                     self.current_scan = None
@@ -305,9 +311,9 @@ class FileScanner:
             current_path = getattr(self, 'current_path', 'Unknown')
             
             # Get current progress from in-memory variables (more accurate than database)
-            total_files = getattr(self, '_total_files', self.current_scan.total_files or 0)
-            total_directories = getattr(self, '_total_directories', self.current_scan.total_directories or 0)
-            total_size = getattr(self, '_total_size', self.current_scan.total_size or 0)
+            total_files = getattr(self, '_total_files', 0)
+            total_directories = getattr(self, '_total_directories', 0)
+            total_size = getattr(self, '_total_size', 0)
             
             # Calculate processing rate
             processing_rate = None
@@ -332,10 +338,10 @@ class FileScanner:
             scan_duration = self._format_duration(elapsed_time)
             
             response_data = {
-                'scan_id': self.current_scan.id,
-                'status': self.current_scan.status,
-                'start_time': self.current_scan.start_time.isoformat(),
-                'end_time': self.current_scan.end_time.isoformat() if self.current_scan.end_time else None,
+                'scan_id': self.current_scan_id,
+                'status': 'running',  # We know it's running if we're in this branch
+                'start_time': datetime.fromtimestamp(self.scan_start_time).isoformat() if self.scan_start_time else None,
+                'end_time': None,  # Running scan has no end time
                 'total_files': total_files,
                 'total_directories': total_directories,
                 'total_size': total_size,
@@ -594,29 +600,29 @@ class FileScanner:
                              dir_path = os.path.join(root, dir_name)
                              
                              try:
-                                # Ensure we have a scan record
-                                if not self.current_scan:
-                                    logger.error(f"🚨 CRITICAL: current_scan is None during directory processing: {dir_path}")
-                                    continue
+                                 # Ensure we have a scan record
+                                 if not self.current_scan_id:
+                                     logger.error(f"🚨 CRITICAL: current_scan_id is None during directory processing: {dir_path}")
+                                     continue
                                 
-                                # Create directory record using FileRecord with is_directory=True
-                                dir_record = FileRecord(
-                                    path=dir_path,
-                                    name=dir_name,
-                                    size=0,
-                                    is_directory=True,
-                                    parent_path=root,
-                                    scan_id=self.current_scan.id
-                                )
-                                db.session.add(dir_record)
-                                total_directories += 1
-                                self._total_directories = total_directories
+                                 # Create directory record using FileRecord with is_directory=True
+                                 dir_record = FileRecord(
+                                     path=dir_path,
+                                     name=dir_name,
+                                     size=0,
+                                     is_directory=True,
+                                     parent_path=root,
+                                     scan_id=self.current_scan_id
+                                 )
+                                 db.session.add(dir_record)
+                                 total_directories += 1
+                                 self._total_directories = total_directories
                                 
-                                # Commit every 100 directories to prevent memory buildup
-                                if total_directories % 100 == 0:
-                                    db.session.commit()
-                                    logger.debug(f"Committed {total_directories} directories")
-                                    
+                                 # Commit every 100 directories to prevent memory buildup
+                                 if total_directories % 100 == 0:
+                                     db.session.commit()
+                                     logger.debug(f"Committed {total_directories} directories")
+                                     
                              except Exception as e:
                                  logger.error(f"Error processing directory {dir_path}: {e}")
                                  db.session.rollback()
@@ -631,8 +637,8 @@ class FileScanner:
                             
                             try:
                                 # Ensure we have a scan record
-                                if not self.current_scan:
-                                    logger.error(f"🚨 CRITICAL: current_scan is None during file processing: {file_path}")
+                                if not self.current_scan_id:
+                                    logger.error(f"🚨 CRITICAL: current_scan_id is None during file processing: {file_path}")
                                     continue
                                 
                                 # Get file stats
@@ -645,7 +651,7 @@ class FileScanner:
                                     name=file_name,
                                     size=file_size,
                                     parent_path=root,
-                                    scan_id=self.current_scan.id
+                                    scan_id=self.current_scan_id
                                 )
                                 
                                 # Extract media metadata if applicable
@@ -672,13 +678,18 @@ class FileScanner:
                         if current_time - last_update_time > 30:  # Update every 30 seconds
                             try:
                                 # Ensure we have a scan record
-                                if self.current_scan:
-                                    self.current_scan.total_files = total_files
-                                    self.current_scan.total_directories = total_directories
-                                    self.current_scan.total_size = total_size
-                                    db.session.commit()
+                                if self.current_scan_id:
+                                    from app import ScanRecord
+                                    scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
+                                    if scan_record:
+                                        scan_record.total_files = total_files
+                                        scan_record.total_directories = total_directories
+                                        scan_record.total_size = total_size
+                                        db.session.commit()
+                                    else:
+                                        logger.error(f"🚨 CRITICAL: scan_record not found for ID {self.current_scan_id}")
                                 else:
-                                    logger.error(f"🚨 CRITICAL: current_scan is None during progress update")
+                                    logger.error(f"🚨 CRITICAL: current_scan_id is None during progress update")
                                 
                                 # CRITICAL: Update global scanner_state for dashboard display
                                 self.update_scanner_state(total_files, total_directories, total_size, share_path)
@@ -711,8 +722,8 @@ class FileScanner:
             # Final commit with Flask context protection
             try:
                 # Ensure we have a scan record first
-                if not self.current_scan:
-                    logger.error(f"🚨 CRITICAL: current_scan is None during finalization!")
+                if not self.current_scan_id:
+                    logger.error(f"🚨 CRITICAL: current_scan_id is None during finalization!")
                     return
                 
                 # Ensure we're in Flask context for final operations
@@ -722,22 +733,27 @@ class FileScanner:
                     current_app.extensions['sqlalchemy']
                 except RuntimeError:
                     # No app context, we need to create one
-                    from app import app
+                    from app import app, ScanRecord
                     with app.app_context():
-                        self.current_scan.total_files = total_files
-                        self.current_scan.total_directories = total_directories
-                        self.current_scan.total_size = total_size
-                        self.current_scan.status = 'completed'
-                        self.current_scan.end_time = datetime.utcnow()
-                        db.session.commit()
+                        scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
+                        if scan_record:
+                            scan_record.total_files = total_files
+                            scan_record.total_directories = total_directories
+                            scan_record.total_size = total_size
+                            scan_record.status = 'completed'
+                            scan_record.end_time = datetime.utcnow()
+                            db.session.commit()
                 else:
                     # We have app context, proceed normally
-                    self.current_scan.total_files = total_files
-                    self.current_scan.total_directories = total_directories
-                    self.current_scan.total_size = total_size
-                    self.current_scan.status = 'completed'
-                    self.current_scan.end_time = datetime.utcnow()
-                    db.session.commit()
+                    from app import ScanRecord
+                    scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
+                    if scan_record:
+                        scan_record.total_files = total_files
+                        scan_record.total_directories = total_directories
+                        scan_record.total_size = total_size
+                        scan_record.status = 'completed'
+                        scan_record.end_time = datetime.utcnow()
+                        db.session.commit()
                     
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
             except Exception as e:
@@ -763,7 +779,7 @@ class FileScanner:
                         current_app.extensions['sqlalchemy']
                         # We have app context, proceed normally
                         from app import ScanRecord
-                        scan_record = db.session.query(ScanRecord).get(self.current_scan.id)
+                        scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
                         if scan_record:
                             scan_record.status = 'failed'
                             scan_record.error_message = f"Scan failed: {str(e)}"
@@ -775,7 +791,7 @@ class FileScanner:
                         from app import app
                         with app.app_context():
                             from app import ScanRecord
-                            scan_record = db.session.query(ScanRecord).get(self.current_scan.id)
+                            scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
                             if scan_record:
                                 scan_record.status = 'failed'
                                 scan_record.error_message = f"Scan failed: {str(e)}"
