@@ -210,6 +210,13 @@ def run_scheduled_scan():
         with app.app_context():
             scan_id = scanner.start_scan()
             logger.info(f"Scheduled scanner started with ID: {scan_id}")
+            
+            # CRITICAL: Update global scanner_state to reflect that scan is running
+            if scan_id:
+                scanner_state['scanning'] = True
+                scanner_state['current_scan_id'] = scan_id
+                scanner_state['start_time'] = datetime.now()
+                logger.info("Updated global scanner_state for scheduled scan")
         
         logger.info(f"=== SCHEDULED SCAN INITIATED ===")
         logger.info(f"Scan ID: {scan_id}")
@@ -1445,6 +1452,13 @@ def start_scan():
         with app.app_context():
             scan_id = scanner.start_scan()
             logger.info(f"Scanner started with ID: {scan_id}")
+            
+            # CRITICAL: Update global scanner_state to reflect that scan is running
+            if scan_id:
+                scanner_state['scanning'] = True
+                scanner_state['current_scan_id'] = scan_id
+                scanner_state['start_time'] = datetime.now()
+                logger.info("Updated global scanner_state to show scan is running")
         
         logger.info(f"=== MANUAL SCAN INITIATED ===")
         logger.info(f"Scan ID: {scan_id}")

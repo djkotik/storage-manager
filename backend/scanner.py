@@ -780,6 +780,16 @@ class FileScanner:
                         db.session.commit()
                     
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
+                
+                # CRITICAL: Update global scanner_state on successful completion
+                global scanner_state
+                if scanner_state is not None:
+                    scanner_state['scanning'] = False
+                    scanner_state['current_path'] = 'Scan completed'
+                    scanner_state['total_files'] = total_files
+                    scanner_state['total_directories'] = total_directories
+                    scanner_state['total_size'] = total_size
+                    logger.info("Updated global scanner_state - scan completed successfully")
             except Exception as e:
                 logger.error(f"Error finalizing scan: {e}")
                 try:
@@ -830,6 +840,14 @@ class FileScanner:
             # Clean up scanner state
             self.scanning = False
             self.current_scan = None
+            
+            # CRITICAL: Update global scanner_state to show scan is no longer running
+            global scanner_state
+            if scanner_state is not None:
+                scanner_state['scanning'] = False
+                scanner_state['current_path'] = ''
+                logger.info("Updated global scanner_state - scan finished")
+            
             logger.info("Scan state cleaned up")
 
     def _extract_media_metadata(self, file_record: FileRecord, file_path: Path):
