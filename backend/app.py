@@ -1931,12 +1931,19 @@ def get_file_tree():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Restrict results to the latest completed scan
+        # First try to get the latest completed scan
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
+        
+        # If no completed scan, try to get the current running scan
         if not latest_scan:
-            logger.info("No completed scans found. Returning empty tree.")
+            latest_scan = db.session.query(ScanRecord).filter(
+                ScanRecord.status == 'running'
+            ).order_by(ScanRecord.start_time.desc()).first()
+            
+        if not latest_scan:
+            logger.info("No scans found. Returning empty tree.")
             return jsonify({'tree': []})
         
         # First try to get pre-calculated totals

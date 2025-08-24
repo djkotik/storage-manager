@@ -64,10 +64,16 @@ const Analytics: React.FC = () => {
   useEffect(() => {
     fetchData()
     fetchScanStatus()
-    // Add real-time updates when scan is running
-    const interval = setInterval(fetchData, 5000) // Poll every 5 seconds
+    // Only poll when scan is running
+    const interval = setInterval(() => {
+      fetchScanStatus()
+      // Only fetch full data if scan is running to avoid unnecessary graph redraws
+      if (scanStatus?.scanning) {
+        fetchData()
+      }
+    }, 5000)
     return () => clearInterval(interval)
-  }, [days])
+  }, [days, scanStatus?.scanning])
 
   const fetchScanStatus = async () => {
     try {
