@@ -1878,16 +1878,25 @@ def get_top_shares():
         if top_shares_data:
             logger.info(f"Found {len(top_shares_data)} top-level directories with pre-calculated totals")
             
-            top_shares = []
-            for share in top_shares_data:
-                top_shares.append({
-                    'name': share.name,
-                    'path': share.path,
-                    'size': share.total_size,
-                    'size_formatted': format_size(share.total_size),
-                    'file_count': share.file_count
-                })
-        else:
+            # Check if FolderInfo has actual data or just empty records
+            total_size_sum = sum(share.total_size or 0 for share in top_shares_data)
+            
+            if total_size_sum > 0:
+                logger.info(f"FolderInfo has real data (total: {format_size(total_size_sum)}), using pre-calculated totals")
+                top_shares = []
+                for share in top_shares_data:
+                    top_shares.append({
+                        'name': share.name,
+                        'path': share.path,
+                        'size': share.total_size,
+                        'size_formatted': format_size(share.total_size),
+                        'file_count': share.file_count
+                    })
+            else:
+                logger.info(f"FolderInfo exists but all sizes are zero, falling back to FileRecord calculation")
+                top_shares_data = None  # Force fallback
+        
+        if not top_shares_data:
             # Fallback to calculating from FileRecord directly
             logger.info("No pre-calculated FolderInfo found, calculating top shares from FileRecord data")
             
