@@ -2848,6 +2848,56 @@ def delete_duplicate_file(group_id, file_id):
         logger.error(f"Error deleting duplicate file: {e}")
         return jsonify({'error': 'Failed to delete duplicate file'}), 500
 
+# Add debug endpoint to check FolderInfo table
+@app.route('/api/debug/folder-info')
+def debug_folder_info():
+    """Debug endpoint to check FolderInfo table contents"""
+    try:
+        # Get latest scan
+        latest_scan = db.session.query(ScanRecord).filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        
+        if not latest_scan:
+            return jsonify({'error': 'No completed scans found'})
+        
+        # Get all FolderInfo records for this scan
+        folder_infos = db.session.query(FolderInfo).filter_by(
+            scan_id=latest_scan.id
+        ).order_by(FolderInfo.depth, FolderInfo.total_size.desc()).all()
+        
+        result = {
+            'scan_id': latest_scan.id,
+            'scan_date': latest_scan.start_time.isoformat() if latest_scan.start_time else None,
+            'total_folder_records': len(folder_infos),
+            'depth_1_count': len([f for f in folder_infos if f.depth == 1]),
+            'depth_breakdown': {},
+            'top_10_depth_1': []
+        }
+        
+        # Group by depth
+        for folder in folder_infos:
+            if folder.depth not in result['depth_breakdown']:
+                result['depth_breakdown'][folder.depth] = 0
+            result['depth_breakdown'][folder.depth] += 1
+        
+        # Get top 10 depth=1 folders
+        depth_1_folders = [f for f in folder_infos if f.depth == 1][:10]
+        for folder in depth_1_folders:
+            result['top_10_depth_1'].append({
+                'path': folder.path,
+                'name': folder.name,
+                'depth': folder.depth,
+                'total_size': folder.total_size,
+                'total_size_formatted': format_size(folder.total_size),
+                'file_count': folder.file_count
+            })
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error in debug_folder_info: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # Add debug endpoint to check DirectoryTotal table
 @app.route('/api/debug/directory-totals')
 def debug_directory_totals():

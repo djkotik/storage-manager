@@ -760,8 +760,9 @@ class FileScanner:
                             db.session.commit()
                             
                             # Create FolderInfo records for top shares and file tree
-                            logger.info("Creating FolderInfo records for top shares and file tree...")
+                            logger.info("🔧 STARTING FOLDERINFO CREATION (with app context) for top shares and file tree...")
                             self._create_folder_info_records()
+                            logger.info("✅ COMPLETED FOLDERINFO CREATION (with app context)")
                 else:
                     # We have app context, proceed normally
                     from app import ScanRecord, FolderInfo
@@ -775,8 +776,9 @@ class FileScanner:
                         db.session.commit()
                         
                         # Create FolderInfo records for top shares and file tree
-                        logger.info("Creating FolderInfo records for top shares and file tree...")
+                        logger.info("🔧 STARTING FOLDERINFO CREATION for top shares and file tree...")
                         self._create_folder_info_records()
+                        logger.info("✅ COMPLETED FOLDERINFO CREATION")
                     
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
                 
@@ -1036,8 +1038,12 @@ class FileScanner:
             
             for directory in directories:
                 try:
-                    # Calculate directory depth
+                    # Calculate directory depth  
                     depth = directory.path.count('/') - self.data_path.count('/')
+                    
+                    # Debug logging for depth calculation
+                    if depth == 1:
+                        logger.info(f"TOP-LEVEL DIRECTORY: {directory.path} (depth={depth})")
                     
                     # Get total size and file counts for this directory (including subdirectories)
                     result = db.session.query(
