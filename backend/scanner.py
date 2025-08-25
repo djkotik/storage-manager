@@ -1049,8 +1049,8 @@ class FileScanner:
                     result = db.session.query(
                         func.sum(FileRecord.size).label('total_size'),
                         func.count(FileRecord.id).label('total_count'),
-                        func.sum(func.case((FileRecord.is_directory == False, 1), else_=0)).label('file_count'),
-                        func.sum(func.case((FileRecord.is_directory == True, 1), else_=0)).label('directory_count')
+                        func.sum(func.case([(FileRecord.is_directory == False, 1)], else_=0)).label('file_count'),
+                        func.sum(func.case([(FileRecord.is_directory == True, 1)], else_=0)).label('directory_count')
                     ).filter(
                         FileRecord.path.like(f"{directory.path}/%"),
                         FileRecord.scan_id == self.current_scan_id
@@ -1058,8 +1058,8 @@ class FileScanner:
                     
                     # Get direct children counts
                     direct_result = db.session.query(
-                        func.count(func.case((FileRecord.is_directory == False, 1), else_=0)).label('direct_files'),
-                        func.count(func.case((FileRecord.is_directory == True, 1), else_=0)).label('direct_dirs')
+                        func.count(func.case([(FileRecord.is_directory == False, 1)], else_=0)).label('direct_files'),
+                        func.count(func.case([(FileRecord.is_directory == True, 1)], else_=0)).label('direct_dirs')
                     ).filter(
                         FileRecord.parent_path == directory.path,
                         FileRecord.scan_id == self.current_scan_id
