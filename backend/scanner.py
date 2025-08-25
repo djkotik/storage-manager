@@ -1039,7 +1039,7 @@ class FileScanner:
             for directory in directories:
                 try:
                     # Calculate directory depth  
-                    depth = directory.path.count('/') - self.data_path.count('/')
+                    depth = directory.path.count('/') - str(self.data_path).count('/')
                     
                     # Debug logging for depth calculation
                     if depth == 1:

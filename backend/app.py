@@ -1867,6 +1867,11 @@ def get_top_shares():
         
         logger.info(f"Using scan ID {latest_scan.id} with status '{latest_scan.status}' for top shares")
         
+        # Quick check: do we have ANY FileRecord data for this scan?
+        total_records = db.session.query(FileRecord).filter_by(scan_id=latest_scan.id).count()
+        total_dirs = db.session.query(FileRecord).filter_by(scan_id=latest_scan.id, is_directory=True).count()
+        logger.info(f"Scan {latest_scan.id} has {total_records} total file records, {total_dirs} directories")
+        
         # First try to get pre-calculated totals
         top_shares_data = db.session.query(
             FolderInfo.path,
@@ -1912,9 +1917,24 @@ def get_top_shares():
                     FileRecord.scan_id == latest_scan.id
                 ).all()
                 
+                logger.info(f"Found {len(all_dirs)} total directories under {data_path}")
+                
                 # Filter to only top-level (one slash more than data_path)
                 data_path_depth = data_path.count('/')
                 top_level_dirs = [d for d in all_dirs if d.path.count('/') == data_path_depth + 1]
+                logger.info(f"After filtering by depth ({data_path_depth + 1}), found {len(top_level_dirs)} top-level directories")
+                
+                # Debug: show first few directories for inspection
+                if all_dirs:
+                    sample_paths = [d.path for d in all_dirs[:5]]
+                    logger.info(f"Sample directory paths: {sample_paths}")
+                    sample_depths = [d.path.count('/') for d in all_dirs[:5]]
+                    logger.info(f"Sample depths (target: {data_path_depth + 1}): {sample_depths}")
+                
+                if top_level_dirs:
+                    top_level_paths = [d.path for d in top_level_dirs[:5]]
+                    logger.info(f"Top-level directory paths found: {top_level_paths}")
+                
                 logger.info(f"Alternative approach found {len(top_level_dirs)} top-level directories")
             
             logger.info(f"Found {len(top_level_dirs)} top-level directories to calculate sizes for")
