@@ -213,23 +213,8 @@ class FileScanner:
             scanner_state['total_directories'] = total_directories
             scanner_state['total_size'] = total_size
             scanner_state['current_path'] = current_path
-        
-        # Force stop any running scan in database
-        try:
-            from app import ScanRecord
-            running_scans = db.session.query(ScanRecord).filter_by(status='running').all()
-            for scan in running_scans:
-                scan.status = 'stopped'
-                scan.error_message = 'Stopped by user request'
-                scan.end_time = datetime.utcnow()
-            db.session.commit()
-            logger.info(f"Force stopped {len(running_scans)} running scans in database")
-        except Exception as e:
-            logger.error(f"Error force stopping scans: {e}")
-        
-        # Reset scanning state
-        self.scanning = False
-        self.current_scan = None
+            # Ensure scanner state shows we're scanning
+            scanner_state['scanning'] = self.scanning
 
     def force_reset(self):
         """Force reset scanner state and clear any stuck scans"""

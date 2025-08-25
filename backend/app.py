@@ -1529,6 +1529,12 @@ def get_scan_status():
         # Check for running scans in database
         running_scan = db.session.query(ScanRecord).filter(ScanRecord.status == 'running').first()
         
+        # Check if we have an active scanner instance running
+        global current_scanner_instance
+        scanner_is_running = False
+        if current_scanner_instance and hasattr(current_scanner_instance, 'scanning'):
+            scanner_is_running = current_scanner_instance.scanning
+        
         # If we have a running scan in DB but scanner state says not scanning, update state
         if running_scan and not scanner_state['scanning']:
             scanner_state['scanning'] = True
@@ -1536,11 +1542,18 @@ def get_scan_status():
             scanner_state['start_time'] = running_scan.start_time
             logger.info(f"Scan status corrected: found running scan {running_scan.id} in DB")
         
-        # Safety check: if in-memory state says scanning but DB shows no running scans, reset state
-        if scanner_state['scanning'] and not running_scan:
+        # If we have an active scanner but no running scan in state, update state
+        if scanner_is_running and not scanner_state['scanning']:
+            scanner_state['scanning'] = True
+            if current_scanner_instance:
+                scanner_state['current_scan_id'] = getattr(current_scanner_instance, 'current_scan_id', None)
+                logger.info("Scan status corrected: active scanner detected")
+        
+        # Only reset state if BOTH database and scanner show no activity
+        if scanner_state['scanning'] and not running_scan and not scanner_is_running:
             scanner_state['scanning'] = False
             scanner_state['current_path'] = ''
-            logger.info("Scan status corrected: no running scans in DB; hiding banner")
+            logger.info("Scan status corrected: no running scans in DB or active scanner; hiding banner")
 
         status_data = {
             'status': 'scanning' if scanner_state['scanning'] else 'idle',
