@@ -445,15 +445,16 @@ class FileScanner:
             self._total_size = 0
             
             # Get max shares to scan setting
-            max_shares_to_scan = int(os.environ.get('MAX_SHARES_TO_SCAN', '10'))
+    
             
             def is_excluded_share(share_name):
                 """Check if a share should be excluded"""
                 share_lower = share_name.lower()
                 
-                # ABSOLUTE CRITICAL: Exclude appdata share completely - MULTIPLE CHECKS
-                if share_lower == 'appdata' or 'appdata' in share_lower:
-                    logger.error(f"🚨 BLOCKING APPDATA SHARE: {share_name} - ABSOLUTELY FORBIDDEN")
+                # Check skip_appdata setting
+                skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
+                if skip_appdata and ('appdata' in share_lower or share_lower == 'appdata'):
+                    logger.info(f"Excluding appdata share: {share_name} (skip_appdata setting enabled)")
                     return True
                 
                 # Also exclude other problematic shares
@@ -569,17 +570,14 @@ class FileScanner:
                             logger.info("Scan stopped by user request")
                             break
                         
-                        # EMERGENCY CRASH PROTECTION: If any appdata path is detected, CRASH THE SCAN
-                        if 'appdata' in root.lower():
-                            error_msg = f"🚨 SCANNER FAILURE: Appdata path detected: {root} - THIS SHOULD NEVER HAPPEN!"
-                            logger.error(error_msg)
-                            raise Exception(error_msg)
-                        
-                        # FILTER OUT APPDATA DIRECTORIES: Remove any appdata-related directories from dirs list
-                        original_dirs = dirs.copy()
-                        dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
-                        if len(original_dirs) != len(dirs):
-                            logger.warning(f"Filtered out {len(original_dirs) - len(dirs)} appdata directories from {root}")
+                        # Check skip_appdata setting for directory filtering
+                        skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
+                        if skip_appdata:
+                            # Filter out appdata directories from dirs list
+                            original_dirs = dirs.copy()
+                            dirs[:] = [d for d in dirs if 'appdata' not in d.lower()]
+                            if len(original_dirs) != len(dirs):
+                                logger.info(f"Filtered out {len(original_dirs) - len(dirs)} appdata directories from {root} (skip_appdata setting enabled)")
                         
                         # Check for directory timeout
                         current_time = time.time()

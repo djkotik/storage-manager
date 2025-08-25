@@ -7,7 +7,7 @@ interface AppSettings {
   scan_time: string
   max_scan_duration: number
   max_items_per_folder: number
-  max_shares_to_scan: number
+
   skip_appdata: boolean
   themes: string[]
 }
@@ -20,7 +20,7 @@ const Settings: React.FC = () => {
   const [scanTime, setScanTime] = useState('01:00')
   const [maxScanDuration, setMaxScanDuration] = useState(6)
   const [maxItemsPerFolder, setMaxItemsPerFolder] = useState(100)
-  const [maxSharesToScan, setMaxSharesToScan] = useState(0)
+
   const [skipAppdata, setSkipAppdata] = useState(true)
 
   useEffect(() => {
@@ -35,7 +35,7 @@ const Settings: React.FC = () => {
       setScanTime(response.data.scan_time)
       setMaxScanDuration(response.data.max_scan_duration)
       setMaxItemsPerFolder(response.data.max_items_per_folder || 100)
-      setMaxSharesToScan(response.data.max_shares_to_scan || 0)
+
       setSkipAppdata(response.data.skip_appdata !== false) // Default to true
     } catch (error) {
       console.error('Error fetching settings:', error)
@@ -51,7 +51,7 @@ const Settings: React.FC = () => {
         scan_time: scanTime,
         max_scan_duration: maxScanDuration,
         max_items_per_folder: maxItemsPerFolder,
-        max_shares_to_scan: maxSharesToScan,
+
         skip_appdata: skipAppdata,
       })
       // Show success message
@@ -175,22 +175,7 @@ const Settings: React.FC = () => {
             </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Max Shares to Scan
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={maxSharesToScan}
-              onChange={(e) => setMaxSharesToScan(Number(e.target.value))}
-              className="input"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Maximum number of shares to scan (0 = unlimited, useful for testing)
-            </p>
-          </div>
+
 
           <div>
             <label className="flex items-center space-x-2">
