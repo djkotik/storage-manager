@@ -1896,11 +1896,26 @@ def get_top_shares():
             logger.info("No pre-calculated FolderInfo found, calculating top shares from FileRecord data")
             
             # Get all top-level directories under data_path
+            # First try exact parent_path match
             top_level_dirs = db.session.query(FileRecord).filter(
                 FileRecord.parent_path == data_path,
                 FileRecord.is_directory == True,
                 FileRecord.scan_id == latest_scan.id
             ).all()
+            
+            # If that fails, try alternative approach: find directories one level down from data_path
+            if not top_level_dirs:
+                logger.info("No directories found with exact parent_path match, trying alternative approach")
+                all_dirs = db.session.query(FileRecord).filter(
+                    FileRecord.path.like(f"{data_path}/%"),
+                    FileRecord.is_directory == True,
+                    FileRecord.scan_id == latest_scan.id
+                ).all()
+                
+                # Filter to only top-level (one slash more than data_path)
+                data_path_depth = data_path.count('/')
+                top_level_dirs = [d for d in all_dirs if d.path.count('/') == data_path_depth + 1]
+                logger.info(f"Alternative approach found {len(top_level_dirs)} top-level directories")
             
             logger.info(f"Found {len(top_level_dirs)} top-level directories to calculate sizes for")
             
@@ -2004,11 +2019,26 @@ def get_file_tree():
             logger.info("No pre-calculated FolderInfo found, building file tree from FileRecord data")
             
             # Get all top-level directories under data_path
+            # First try exact parent_path match
             top_level_dirs = db.session.query(FileRecord).filter(
                 FileRecord.parent_path == data_path,
                 FileRecord.is_directory == True,
                 FileRecord.scan_id == latest_scan.id
             ).all()
+            
+            # If that fails, try alternative approach: find directories one level down from data_path
+            if not top_level_dirs:
+                logger.info("No directories found with exact parent_path match for file tree, trying alternative approach")
+                all_dirs = db.session.query(FileRecord).filter(
+                    FileRecord.path.like(f"{data_path}/%"),
+                    FileRecord.is_directory == True,
+                    FileRecord.scan_id == latest_scan.id
+                ).all()
+                
+                # Filter to only top-level (one slash more than data_path)
+                data_path_depth = data_path.count('/')
+                top_level_dirs = [d for d in all_dirs if d.path.count('/') == data_path_depth + 1]
+                logger.info(f"Alternative approach found {len(top_level_dirs)} top-level directories for file tree")
             
             logger.info(f"Found {len(top_level_dirs)} top-level directories for file tree")
             
@@ -2934,6 +2964,64 @@ def debug_folder_info():
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error in debug_folder_info: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Add debug endpoint to investigate FileRecord data structure
+@app.route('/api/debug/file-records')
+def debug_file_records():
+    """Debug endpoint to check FileRecord data structure"""
+    try:
+        data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
+        
+        # Get latest scan
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
+        
+        if not latest_scan:
+            return jsonify({'error': 'No scans found'})
+        
+        # Get sample file records to understand data structure
+        sample_files = db.session.query(FileRecord).filter_by(
+            scan_id=latest_scan.id
+        ).limit(20).all()
+        
+        sample_dirs = db.session.query(FileRecord).filter_by(
+            scan_id=latest_scan.id,
+            is_directory=True
+        ).limit(20).all()
+        
+        # Check specifically for top-level directories
+        top_level_query = db.session.query(FileRecord).filter(
+            FileRecord.parent_path == data_path,
+            FileRecord.is_directory == True,
+            FileRecord.scan_id == latest_scan.id
+        )
+        
+        top_level_dirs = top_level_query.all()
+        
+        # Also check for any directories that start with data_path
+        data_path_dirs = db.session.query(FileRecord).filter(
+            FileRecord.path.like(f"{data_path}/%"),
+            FileRecord.is_directory == True,
+            FileRecord.scan_id == latest_scan.id
+        ).limit(10).all()
+        
+        result = {
+            'data_path': data_path,
+            'scan_id': latest_scan.id,
+            'scan_status': latest_scan.status,
+            'total_files_in_scan': db.session.query(FileRecord).filter_by(scan_id=latest_scan.id).count(),
+            'total_directories_in_scan': db.session.query(FileRecord).filter_by(scan_id=latest_scan.id, is_directory=True).count(),
+            'top_level_directories_found': len(top_level_dirs),
+            'sample_files': [{'path': f.path, 'parent_path': f.parent_path, 'name': f.name, 'is_directory': f.is_directory} for f in sample_files],
+            'sample_directories': [{'path': d.path, 'parent_path': d.parent_path, 'name': d.name} for d in sample_dirs],
+            'top_level_directories': [{'path': d.path, 'parent_path': d.parent_path, 'name': d.name} for d in top_level_dirs],
+            'directories_under_data_path': [{'path': d.path, 'parent_path': d.parent_path, 'name': d.name} for d in data_path_dirs],
+            'top_level_query_sql': str(top_level_query.statement.compile(compile_kwargs={"literal_binds": True}))
+        }
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error in debug_file_records: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Add debug endpoint to check DirectoryTotal table
