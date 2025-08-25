@@ -537,6 +537,31 @@ class FileScanner:
                     logger.info(f"Skipping non-directory: {share_path}")
                     continue
                 
+                # Create FileRecord for the top-level share directory itself
+                try:
+                    if not self.current_scan_id:
+                        logger.error(f"🚨 CRITICAL: current_scan_id is None during share processing: {share_path}")
+                        continue
+                    
+                    # Create record for the share directory (e.g., /data/tv shows)
+                    share_record = FileRecord(
+                        path=share_path,
+                        name=share_name,
+                        size=0,
+                        is_directory=True,
+                        parent_path=str(self.data_path),  # parent is /data
+                        scan_id=self.current_scan_id
+                    )
+                    db.session.add(share_record)
+                    total_directories += 1
+                    self._total_directories = total_directories
+                    logger.info(f"Created top-level share record: {share_path} (parent: {self.data_path})")
+                    
+                except Exception as e:
+                    logger.error(f"Error creating share directory record for {share_path}: {e}")
+                    db.session.rollback()
+                    continue
+                
                 # Now scan this share recursively
                 try:
                     for root, dirs, files in os.walk(share_path):
