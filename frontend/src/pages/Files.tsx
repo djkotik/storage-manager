@@ -5,7 +5,19 @@ import axios from 'axios'
 interface ScanStatus {
   status: string
   scanning: boolean
-  last_updated?: string
+  scan_id?: number
+  start_time?: string
+  end_time?: string
+  total_files?: number
+  total_directories?: number
+  total_size?: number
+  total_size_formatted?: string
+  current_path?: string
+  error?: string
+  estimated_completion?: string
+  percentage_complete?: number
+  elapsed_time?: string
+  elapsed_time_formatted?: string
 }
 
 interface FileItem {
@@ -319,10 +331,10 @@ const Files: React.FC = () => {
                 </div>
               </div>
             ) : (
-              scanStatus.last_updated && (
+              (scanStatus.status === 'idle' || scanStatus.status === 'completed') && scanStatus.start_time && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 dark:bg-green-900/20 dark:border-green-800">
                   <p className="text-sm text-green-800 dark:text-green-200">
-                    ✅ Showing structure from scan completed {new Date(scanStatus.last_updated).toLocaleString()}
+                    ✅ Showing structure from latest scan (started {new Date(scanStatus.start_time).toLocaleString()})
                   </p>
                 </div>
               )

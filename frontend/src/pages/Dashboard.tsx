@@ -523,10 +523,10 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           ) : (
-            scanStatus.last_updated && (
+            (scanStatus.status === 'idle' || scanStatus.status === 'completed') && scanStatus.start_time && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 dark:bg-green-900/20 dark:border-green-800">
                 <p className="text-sm text-green-800 dark:text-green-200">
-                  ✅ Showing data from scan completed {new Date(scanStatus.last_updated).toLocaleString()}
+                  ✅ Showing data from latest scan (started {new Date(scanStatus.start_time).toLocaleString()})
                 </p>
               </div>
             )
