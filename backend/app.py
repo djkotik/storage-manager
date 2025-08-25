@@ -1717,10 +1717,8 @@ def get_files():
         file_type = request.args.get('type', '')
         modified_since = request.args.get('modified_since', '')
         
-        # Get latest completed scan
-        latest_scan = db.session.query(ScanRecord).filter(
-            ScanRecord.status == 'completed'
-        ).order_by(ScanRecord.start_time.desc()).first()
+        # Always get the most recent scan regardless of status
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
         
         if not latest_scan:
             return jsonify({
@@ -1852,14 +1850,9 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # Get the latest scan regardless of status first, then prefer completed
-        latest_scan = db.session.query(ScanRecord).filter(
-            ScanRecord.status == 'completed'
-        ).order_by(ScanRecord.start_time.desc()).first()
-        
-        # If no completed scan, get the most recent scan regardless of status
-        if not latest_scan:
-            latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
+        # Always get the most recent scan regardless of status
+        # This ensures we show live data during scans and final data when complete
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
             
         if not latest_scan:
             logger.info("No scans found at all. Returning empty top shares list.")
@@ -1989,14 +1982,9 @@ def get_file_tree():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # Get the latest scan regardless of status first, then prefer completed
-        latest_scan = db.session.query(ScanRecord).filter(
-            ScanRecord.status == 'completed'
-        ).order_by(ScanRecord.start_time.desc()).first()
-        
-        # If no completed scan, get the most recent scan regardless of status
-        if not latest_scan:
-            latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
+        # Always get the most recent scan regardless of status
+        # This ensures we show live data during scans and final data when complete
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
             
         if not latest_scan:
             logger.info("No scans found at all. Returning empty tree.")
@@ -2218,16 +2206,8 @@ def delete_file_or_directory(file_id):
 def get_analytics_overview():
     """Get storage analytics overview"""
     try:
-        # First try to get the latest completed scan
-        latest_scan = db.session.query(ScanRecord).filter(
-            ScanRecord.status == 'completed'
-        ).order_by(ScanRecord.start_time.desc()).first()
-        
-        # If no completed scan, try to get the current running scan
-        if not latest_scan:
-            latest_scan = db.session.query(ScanRecord).filter(
-                ScanRecord.status == 'running'
-            ).order_by(ScanRecord.start_time.desc()).first()
+        # Always get the most recent scan regardless of status
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
         
         if not latest_scan:
             return jsonify({
@@ -2428,10 +2408,8 @@ def get_media_files():
         resolution = request.args.get('resolution', '')
         search = request.args.get('search', '')
         
-        # Restrict to latest completed scan's files when joining
-        latest_scan = db.session.query(ScanRecord).filter(
-            ScanRecord.status == 'completed'
-        ).order_by(ScanRecord.start_time.desc()).first()
+        # Always get the most recent scan regardless of status
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
 
         query = MediaFile.query
         
