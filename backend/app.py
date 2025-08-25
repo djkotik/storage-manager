@@ -1934,17 +1934,39 @@ def get_top_shares():
             for directory in top_level_dirs:
                 try:
                     # Calculate total size for this directory and all subdirectories
+                    # Use both exact path match AND subdirectory pattern to catch all files
                     total_result = db.session.query(
                         func.sum(FileRecord.size).label('total_size'),
                         func.count(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
                     ).filter(
-                        FileRecord.path.like(f"{directory.path}/%"),
+                        db.or_(
+                            FileRecord.path == directory.path,  # Directory itself
+                            FileRecord.path.like(f"{directory.path}/%")  # Files/dirs under it
+                        ),
                         FileRecord.scan_id == latest_scan.id
                     ).first()
                     
-                    # Add the directory's own size if it has any
+                    # Get the calculated totals
                     directory_size = total_result.total_size or 0
                     file_count = total_result.file_count or 0
+                    
+                    # Debug logging to see what we're finding
+                    logger.info(f"Directory {directory.path}: size={directory_size}, files={file_count}")
+                    
+                    # If we got zero, try a different approach - check parent_path
+                    if directory_size == 0:
+                        parent_result = db.session.query(
+                            func.sum(FileRecord.size).label('total_size'),
+                            func.count(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+                        ).filter(
+                            FileRecord.parent_path == directory.path,
+                            FileRecord.scan_id == latest_scan.id
+                        ).first()
+                        
+                        if parent_result and parent_result.total_size:
+                            directory_size = parent_result.total_size or 0
+                            file_count = parent_result.file_count or 0
+                            logger.info(f"Used parent_path approach for {directory.path}: size={directory_size}, files={file_count}")
                     
                     top_shares.append({
                         'name': directory.name,
@@ -1954,7 +1976,7 @@ def get_top_shares():
                         'file_count': file_count
                     })
                     
-                    logger.debug(f"Calculated size for {directory.name}: {format_size(directory_size)}")
+                    logger.info(f"Calculated size for {directory.name}: {format_size(directory_size)}")
                     
                 except Exception as e:
                     logger.error(f"Error calculating size for directory {directory.path}: {e}")
