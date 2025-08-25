@@ -915,10 +915,8 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
 def get_folder_info(path):
     """Get comprehensive folder information for a directory"""
     try:
-        # Get the latest completed scan
-        latest_scan = ScanRecord.query.filter(
-            ScanRecord.status == 'completed'
-        ).order_by(desc(ScanRecord.start_time)).first()
+        # Always get the most recent scan regardless of status
+        latest_scan = ScanRecord.query.order_by(desc(ScanRecord.start_time)).first()
         
         if not latest_scan:
             return {
@@ -3149,10 +3147,8 @@ def get_database_status():
 def get_folder_info_by_path(folder_path):
     """Get comprehensive folder information for a specific path"""
     try:
-        # Get the latest completed scan
-        latest_scan = ScanRecord.query.filter(
-            ScanRecord.status == 'completed'
-        ).order_by(desc(ScanRecord.start_time)).first()
+        # Always get the most recent scan regardless of status
+        latest_scan = ScanRecord.query.order_by(desc(ScanRecord.start_time)).first()
         
         if not latest_scan:
             return jsonify({'error': 'No completed scan found'}), 404
@@ -3212,10 +3208,8 @@ def get_folder_info_by_path(folder_path):
 def get_folder_children_by_path(folder_path):
     """Get children of a folder with detailed information"""
     try:
-        # Get the latest completed scan
-        latest_scan = ScanRecord.query.filter(
-            ScanRecord.status == 'completed'
-        ).order_by(desc(ScanRecord.start_time)).first()
+        # Always get the most recent scan regardless of status
+        latest_scan = ScanRecord.query.order_by(desc(ScanRecord.start_time)).first()
         
         if not latest_scan:
             return jsonify({'error': 'No completed scan found'}), 404
