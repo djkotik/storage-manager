@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { ChevronRight, ChevronDown, Folder, File, HardDrive, Trash2, FileText, Image, Film, Music, Archive, Code } from 'lucide-react'
 import axios from 'axios'
 
+interface ScanStatus {
+  status: string
+  scanning: boolean
+  last_updated?: string
+}
+
 interface FileItem {
   id: number
   path: string
@@ -76,10 +82,24 @@ const Files: React.FC = () => {
   const [loadingChildren, setLoadingChildren] = useState<Set<number>>(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [scanStatus, setScanStatus] = useState<ScanStatus>({ status: 'idle', scanning: false })
 
   useEffect(() => {
     fetchFileTree()
+    fetchScanStatus()
+    // Poll scan status every 5 seconds
+    const interval = setInterval(fetchScanStatus, 5000)
+    return () => clearInterval(interval)
   }, [])
+
+  const fetchScanStatus = async () => {
+    try {
+      const response = await axios.get('/api/scan/status')
+      setScanStatus(response.data)
+    } catch (error) {
+      console.error('Error fetching scan status:', error)
+    }
+  }
 
   const fetchFileTree = async () => {
     try {
@@ -287,6 +307,26 @@ const Files: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Storage Structure
             </h3>
+
+            {/* Scan Status Indicator */}
+            {scanStatus.scanning ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 dark:bg-blue-900/20 dark:border-blue-800">
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    Scan in progress... Directory structure updates as files are discovered.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              scanStatus.last_updated && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 dark:bg-green-900/20 dark:border-green-800">
+                  <p className="text-sm text-green-800 dark:text-green-200">
+                    ✅ Showing structure from scan completed {new Date(scanStatus.last_updated).toLocaleString()}
+                  </p>
+                </div>
+              )
+            )}
             
             {fileTree.length === 0 ? (
               <div className="text-center py-8">
