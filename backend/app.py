@@ -2798,6 +2798,29 @@ def delete_duplicate_file(group_id, file_id):
         
         file_record = FileRecord.query.get_or_404(file_id)
         
+        # Check if filesystem is read-only
+        try:
+            # Test write permissions by trying to create a test file in the parent directory
+            test_dir = os.path.dirname(file_record.path)
+            test_file = os.path.join(test_dir, '.write_test')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            can_delete = True
+        except (OSError, PermissionError):
+            can_delete = False
+        
+        if not can_delete:
+            # Filesystem is read-only, just mark as deleted in database
+            duplicate_file.is_deleted = True
+            db.session.commit()
+            
+            logger.info(f"Marked duplicate file as deleted (read-only filesystem): {file_record.path}")
+            return jsonify({
+                'message': 'File marked as deleted (read-only filesystem)',
+                'warning': 'File system is read-only. File was removed from database but remains on disk.'
+            })
+        
         # Create trash bin entry
         trash_entry = TrashBin(
             original_path=file_record.path,

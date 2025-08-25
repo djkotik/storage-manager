@@ -748,7 +748,7 @@ class FileScanner:
                     current_app.extensions['sqlalchemy']
                 except RuntimeError:
                     # No app context, we need to create one
-                    from app import app, ScanRecord
+                    from app import app, ScanRecord, FolderInfo
                     with app.app_context():
                         scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
                         if scan_record:
@@ -758,9 +758,13 @@ class FileScanner:
                             scan_record.status = 'completed'
                             scan_record.end_time = datetime.utcnow()
                             db.session.commit()
+                            
+                            # Create FolderInfo records for top shares and file tree
+                            logger.info("Creating FolderInfo records for top shares and file tree...")
+                            self._create_folder_info_records()
                 else:
                     # We have app context, proceed normally
-                    from app import ScanRecord
+                    from app import ScanRecord, FolderInfo
                     scan_record = db.session.query(ScanRecord).get(self.current_scan_id)
                     if scan_record:
                         scan_record.total_files = total_files
@@ -769,6 +773,10 @@ class FileScanner:
                         scan_record.status = 'completed'
                         scan_record.end_time = datetime.utcnow()
                         db.session.commit()
+                        
+                        # Create FolderInfo records for top shares and file tree
+                        logger.info("Creating FolderInfo records for top shares and file tree...")
+                        self._create_folder_info_records()
                     
                 logger.info(f"Scan completed successfully: {total_files:,} files, {total_directories:,} directories, {format_size(total_size)}")
                 
@@ -1004,4 +1012,78 @@ class FileScanner:
         except Exception as e:
             logger.error(f"Error during post-scan processing: {e}")
             # Don't fail the entire scan for post-processing errors
-            logger.warning("Post-scan processing failed, but scan data is preserved") 
+            logger.warning("Post-scan processing failed, but scan data is preserved")
+    
+    def _create_folder_info_records(self):
+        """Create FolderInfo records for directories to support top shares and file tree"""
+        try:
+            from app import FolderInfo
+            from models import FileRecord
+            from sqlalchemy import func
+            
+            logger.info("Starting FolderInfo creation process...")
+            
+            # Clear existing FolderInfo records for this scan
+            db.session.query(FolderInfo).filter_by(scan_id=self.current_scan_id).delete()
+            
+            # Get all directories from this scan
+            directories = db.session.query(FileRecord).filter_by(
+                scan_id=self.current_scan_id,
+                is_directory=True
+            ).all()
+            
+            logger.info(f"Processing {len(directories)} directories for FolderInfo creation...")
+            
+            for directory in directories:
+                try:
+                    # Calculate directory depth
+                    depth = directory.path.count('/') - self.data_path.count('/')
+                    
+                    # Get total size and file counts for this directory (including subdirectories)
+                    result = db.session.query(
+                        func.sum(FileRecord.size).label('total_size'),
+                        func.count(FileRecord.id).label('total_count'),
+                        func.sum(func.case((FileRecord.is_directory == False, 1), else_=0)).label('file_count'),
+                        func.sum(func.case((FileRecord.is_directory == True, 1), else_=0)).label('directory_count')
+                    ).filter(
+                        FileRecord.path.like(f"{directory.path}/%"),
+                        FileRecord.scan_id == self.current_scan_id
+                    ).first()
+                    
+                    # Get direct children counts
+                    direct_result = db.session.query(
+                        func.count(func.case((FileRecord.is_directory == False, 1), else_=0)).label('direct_files'),
+                        func.count(func.case((FileRecord.is_directory == True, 1), else_=0)).label('direct_dirs')
+                    ).filter(
+                        FileRecord.parent_path == directory.path,
+                        FileRecord.scan_id == self.current_scan_id
+                    ).first()
+                    
+                    # Create FolderInfo record
+                    folder_info = FolderInfo(
+                        path=directory.path,
+                        name=directory.name,
+                        parent_path=directory.parent_path,
+                        total_size=result.total_size or 0,
+                        file_count=result.file_count or 0,
+                        directory_count=result.directory_count or 0,
+                        direct_file_count=direct_result.direct_files or 0,
+                        direct_directory_count=direct_result.direct_dirs or 0,
+                        depth=depth,
+                        scan_id=self.current_scan_id,
+                        updated_at=datetime.utcnow()
+                    )
+                    
+                    db.session.add(folder_info)
+                    
+                except Exception as e:
+                    logger.error(f"Error creating FolderInfo for {directory.path}: {e}")
+                    continue
+            
+            # Commit all FolderInfo records
+            db.session.commit()
+            logger.info(f"Successfully created FolderInfo records for {len(directories)} directories")
+            
+        except Exception as e:
+            logger.error(f"Error in _create_folder_info_records: {e}")
+            db.session.rollback() 
