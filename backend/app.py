@@ -2036,22 +2036,31 @@ def get_file_tree():
         if tree_data:
             logger.info(f"Found {len(tree_data)} top-level directories with pre-calculated totals")
             
-            tree = []
-            for item in tree_data:
-                # Get the FileRecord ID for this directory
-                file_record = FileRecord.query.filter_by(path=item.path).first()
-                
-                tree.append({
-                    'id': file_record.id if file_record else 0,
-                    'name': item.name,
-                    'path': item.path,
-                    'size': item.total_size,
-                    'size_formatted': format_size(item.total_size),
-                    'file_count': item.file_count,
-                    'is_directory': True,
-                    'children': []  # Will be populated when expanded
-                })
-        else:
+            # Check if FolderInfo has actual data or just empty records
+            total_size_sum = sum(item.total_size or 0 for item in tree_data)
+            
+            if total_size_sum > 0:
+                logger.info(f"FolderInfo has real data (total: {format_size(total_size_sum)}), using pre-calculated totals")
+                tree = []
+                for item in tree_data:
+                    # Get the FileRecord ID for this directory
+                    file_record = FileRecord.query.filter_by(path=item.path).first()
+                    
+                    tree.append({
+                        'id': file_record.id if file_record else 0,
+                        'name': item.name,
+                        'path': item.path,
+                        'size': item.total_size,
+                        'size_formatted': format_size(item.total_size),
+                        'file_count': item.file_count,
+                        'is_directory': True,
+                        'children': []  # Will be populated when expanded
+                    })
+            else:
+                logger.info(f"FolderInfo exists but all sizes are zero, falling back to FileRecord calculation")
+                tree_data = None  # Force fallback
+        
+        if not tree_data:
             # Fallback to calculating from FileRecord directly
             logger.info("No pre-calculated FolderInfo found, building file tree from FileRecord data")
             
