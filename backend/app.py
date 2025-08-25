@@ -1852,20 +1852,20 @@ def get_top_shares():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting top shares for data_path: {data_path}")
         
-        # First try to get the latest completed scan
+        # Get the latest scan regardless of status first, then prefer completed
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
         
-        # If no completed scan, try to get the current running scan
+        # If no completed scan, get the most recent scan regardless of status
         if not latest_scan:
-            latest_scan = db.session.query(ScanRecord).filter(
-                ScanRecord.status == 'running'
-            ).order_by(ScanRecord.start_time.desc()).first()
+            latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
             
         if not latest_scan:
-            logger.info("No scans found. Returning empty top shares list.")
+            logger.info("No scans found at all. Returning empty top shares list.")
             return jsonify({'top_shares': []})
+        
+        logger.info(f"Using scan ID {latest_scan.id} with status '{latest_scan.status}' for top shares")
         
         # First try to get pre-calculated totals
         top_shares_data = db.session.query(
@@ -1892,37 +1892,47 @@ def get_top_shares():
                     'file_count': share.file_count
                 })
         else:
-            # Fallback to old approach if no pre-calculated data
-            logger.info("No pre-calculated totals found, using fallback approach")
+            # Fallback to calculating from FileRecord directly
+            logger.info("No pre-calculated FolderInfo found, calculating top shares from FileRecord data")
             
-            if latest_scan:
-                # Get distinct top-level directories from latest scan
-                shares_data = db.session.query(
-                    FileRecord.name,
-                    FileRecord.path,
-                    func.sum(FileRecord.size).label('total_size'),
-                    func.count(FileRecord.id).label('total_count'),
-                    func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
-                ).filter(
-                    FileRecord.parent_path == data_path,
-                    FileRecord.is_directory == True,  # Only directories
-                    FileRecord.scan_id == latest_scan.id
-                ).group_by(
-                    FileRecord.name,
-                    FileRecord.path
-                ).all()
-                
-                top_shares = []
-                for share in shares_data:
+            # Get all top-level directories under data_path
+            top_level_dirs = db.session.query(FileRecord).filter(
+                FileRecord.parent_path == data_path,
+                FileRecord.is_directory == True,
+                FileRecord.scan_id == latest_scan.id
+            ).all()
+            
+            logger.info(f"Found {len(top_level_dirs)} top-level directories to calculate sizes for")
+            
+            top_shares = []
+            for directory in top_level_dirs:
+                try:
+                    # Calculate total size for this directory and all subdirectories
+                    total_result = db.session.query(
+                        func.sum(FileRecord.size).label('total_size'),
+                        func.count(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+                    ).filter(
+                        FileRecord.path.like(f"{directory.path}/%"),
+                        FileRecord.scan_id == latest_scan.id
+                    ).first()
+                    
+                    # Add the directory's own size if it has any
+                    directory_size = total_result.total_size or 0
+                    file_count = total_result.file_count or 0
+                    
                     top_shares.append({
-                        'name': share.name,
-                        'path': share.path,
-                        'size': share.total_size or 0,
-                        'size_formatted': format_size(share.total_size or 0),
-                        'file_count': share.file_count or 0
+                        'name': directory.name,
+                        'path': directory.path,
+                        'size': directory_size,
+                        'size_formatted': format_size(directory_size),
+                        'file_count': file_count
                     })
-            else:
-                top_shares = []
+                    
+                    logger.debug(f"Calculated size for {directory.name}: {format_size(directory_size)}")
+                    
+                except Exception as e:
+                    logger.error(f"Error calculating size for directory {directory.path}: {e}")
+                    continue
         
         # Sort by total size and take top 10
         top_shares.sort(key=lambda x: x['size'], reverse=True)
@@ -1944,20 +1954,20 @@ def get_file_tree():
         data_path = get_setting('data_path', os.environ.get('DATA_PATH', '/data'))
         logger.info(f"Getting file tree for data_path: {data_path}")
         
-        # First try to get the latest completed scan
+        # Get the latest scan regardless of status first, then prefer completed
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
         
-        # If no completed scan, try to get the current running scan
+        # If no completed scan, get the most recent scan regardless of status
         if not latest_scan:
-            latest_scan = db.session.query(ScanRecord).filter(
-                ScanRecord.status == 'running'
-            ).order_by(ScanRecord.start_time.desc()).first()
+            latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
             
         if not latest_scan:
-            logger.info("No scans found. Returning empty tree.")
+            logger.info("No scans found at all. Returning empty tree.")
             return jsonify({'tree': []})
+        
+        logger.info(f"Using scan ID {latest_scan.id} with status '{latest_scan.status}' for file tree")
         
         # First try to get pre-calculated totals
         tree_data = db.session.query(
@@ -1990,42 +2000,47 @@ def get_file_tree():
                     'children': []  # Will be populated when expanded
                 })
         else:
-            # Fallback to old approach if no pre-calculated data
-            logger.info("No pre-calculated totals found, using fallback approach")
+            # Fallback to calculating from FileRecord directly
+            logger.info("No pre-calculated FolderInfo found, building file tree from FileRecord data")
             
-            if latest_scan:
-                # Get distinct top-level directories from latest scan
-                shares_data = db.session.query(
-                    FileRecord.name,
-                    FileRecord.path,
-                    FileRecord.id,
-                    func.sum(FileRecord.size).label('total_size'),
-                    func.count(FileRecord.id).label('total_count'),
-                    func.sum(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
-                ).filter(
-                    FileRecord.parent_path == data_path,
-                    FileRecord.is_directory == True,  # Only directories
-                    FileRecord.scan_id == latest_scan.id
-                ).group_by(
-                    FileRecord.name,
-                    FileRecord.path,
-                    FileRecord.id
-                ).all()
-                
-                tree = []
-                for share in shares_data:
+            # Get all top-level directories under data_path
+            top_level_dirs = db.session.query(FileRecord).filter(
+                FileRecord.parent_path == data_path,
+                FileRecord.is_directory == True,
+                FileRecord.scan_id == latest_scan.id
+            ).all()
+            
+            logger.info(f"Found {len(top_level_dirs)} top-level directories for file tree")
+            
+            tree = []
+            for directory in top_level_dirs:
+                try:
+                    # Calculate total size for this directory and all subdirectories
+                    total_result = db.session.query(
+                        func.sum(FileRecord.size).label('total_size'),
+                        func.count(case((FileRecord.is_directory == False, 1), else_=0)).label('file_count')
+                    ).filter(
+                        FileRecord.path.like(f"{directory.path}/%"),
+                        FileRecord.scan_id == latest_scan.id
+                    ).first()
+                    
+                    directory_size = total_result.total_size or 0
+                    file_count = total_result.file_count or 0
+                    
                     tree.append({
-                        'id': share.id,
-                        'name': share.name,
-                        'path': share.path,
-                        'size': share.total_size or 0,
-                        'size_formatted': format_size(share.total_size or 0),
-                        'file_count': share.file_count or 0,
+                        'id': directory.id,
+                        'name': directory.name,
+                        'path': directory.path,
+                        'size': directory_size,
+                        'size_formatted': format_size(directory_size),
+                        'file_count': file_count,
                         'is_directory': True,
                         'children': []  # Will be populated when expanded
                     })
-            else:
-                tree = []
+                    
+                except Exception as e:
+                    logger.error(f"Error calculating size for file tree directory {directory.path}: {e}")
+                    continue
         
         # Sort by total size
         tree.sort(key=lambda x: x['size'], reverse=True)
@@ -2848,50 +2863,73 @@ def delete_duplicate_file(group_id, file_id):
         logger.error(f"Error deleting duplicate file: {e}")
         return jsonify({'error': 'Failed to delete duplicate file'}), 500
 
-# Add debug endpoint to check FolderInfo table
+# Add debug endpoint to check scan records and FolderInfo table
 @app.route('/api/debug/folder-info')
 def debug_folder_info():
-    """Debug endpoint to check FolderInfo table contents"""
+    """Debug endpoint to check scan records and FolderInfo table contents"""
     try:
-        # Get latest scan
+        # Get ALL scans to see what we have
+        all_scans = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).limit(5).all()
+        
+        result = {
+            'all_recent_scans': [],
+            'latest_completed_scan': None,
+            'folder_info_data': None
+        }
+        
+        # Show recent scans
+        for scan in all_scans:
+            result['all_recent_scans'].append({
+                'id': scan.id,
+                'status': scan.status,
+                'start_time': scan.start_time.isoformat() if scan.start_time else None,
+                'end_time': scan.end_time.isoformat() if scan.end_time else None,
+                'total_files': scan.total_files,
+                'total_directories': scan.total_directories
+            })
+        
+        # Get latest completed scan
         latest_scan = db.session.query(ScanRecord).filter(
             ScanRecord.status == 'completed'
         ).order_by(ScanRecord.start_time.desc()).first()
         
-        if not latest_scan:
-            return jsonify({'error': 'No completed scans found'})
-        
-        # Get all FolderInfo records for this scan
-        folder_infos = db.session.query(FolderInfo).filter_by(
-            scan_id=latest_scan.id
-        ).order_by(FolderInfo.depth, FolderInfo.total_size.desc()).all()
-        
-        result = {
-            'scan_id': latest_scan.id,
-            'scan_date': latest_scan.start_time.isoformat() if latest_scan.start_time else None,
-            'total_folder_records': len(folder_infos),
-            'depth_1_count': len([f for f in folder_infos if f.depth == 1]),
-            'depth_breakdown': {},
-            'top_10_depth_1': []
-        }
-        
-        # Group by depth
-        for folder in folder_infos:
-            if folder.depth not in result['depth_breakdown']:
-                result['depth_breakdown'][folder.depth] = 0
-            result['depth_breakdown'][folder.depth] += 1
-        
-        # Get top 10 depth=1 folders
-        depth_1_folders = [f for f in folder_infos if f.depth == 1][:10]
-        for folder in depth_1_folders:
-            result['top_10_depth_1'].append({
-                'path': folder.path,
-                'name': folder.name,
-                'depth': folder.depth,
-                'total_size': folder.total_size,
-                'total_size_formatted': format_size(folder.total_size),
-                'file_count': folder.file_count
-            })
+        if latest_scan:
+            result['latest_completed_scan'] = {
+                'id': latest_scan.id,
+                'status': latest_scan.status,
+                'start_time': latest_scan.start_time.isoformat() if latest_scan.start_time else None,
+                'end_time': latest_scan.end_time.isoformat() if latest_scan.end_time else None
+            }
+            
+            # Get all FolderInfo records for this scan
+            folder_infos = db.session.query(FolderInfo).filter_by(
+                scan_id=latest_scan.id
+            ).order_by(FolderInfo.depth, FolderInfo.total_size.desc()).all()
+            
+            result['folder_info_data'] = {
+                'total_folder_records': len(folder_infos),
+                'depth_1_count': len([f for f in folder_infos if f.depth == 1]),
+                'depth_breakdown': {},
+                'top_10_depth_1': []
+            }
+            
+            # Group by depth
+            for folder in folder_infos:
+                if folder.depth not in result['folder_info_data']['depth_breakdown']:
+                    result['folder_info_data']['depth_breakdown'][folder.depth] = 0
+                result['folder_info_data']['depth_breakdown'][folder.depth] += 1
+            
+            # Get top 10 depth=1 folders
+            depth_1_folders = [f for f in folder_infos if f.depth == 1][:10]
+            for folder in depth_1_folders:
+                result['folder_info_data']['top_10_depth_1'].append({
+                    'path': folder.path,
+                    'name': folder.name,
+                    'depth': folder.depth,
+                    'total_size': folder.total_size,
+                    'total_size_formatted': format_size(folder.total_size),
+                    'file_count': folder.file_count
+                })
         
         return jsonify(result)
     except Exception as e:
