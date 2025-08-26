@@ -151,6 +151,13 @@ const Files: React.FC = () => {
                 children: response.data.children
               }
             }
+            // Recursively update nested children
+            if (item.children) {
+              return {
+                ...item,
+                children: updateTree(item.children)
+              }
+            }
             return item
           })
         }
