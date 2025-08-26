@@ -1272,7 +1272,7 @@ def get_settings():
     """Get all settings"""
     try:
         settings = {}
-        for setting in Setting.query.all():
+        for setting in Settings.query.all():
             settings[setting.key] = setting.value
         
         # Set defaults for missing settings
@@ -1303,11 +1303,11 @@ def update_settings():
             return jsonify({'error': 'No data provided'}), 400
         
         for key, value in data.items():
-            setting = Setting.query.filter_by(key=key).first()
+            setting = Settings.query.filter_by(key=key).first()
             if setting:
                 setting.value = str(value)
             else:
-                setting = Setting(key=key, value=str(value))
+                setting = Settings(key=key, value=str(value))
                 db.session.add(setting)
         
         db.session.commit()
