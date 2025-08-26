@@ -1172,6 +1172,22 @@ def serve_static(filename):
     logger.info(f"FRONTEND_DIST_DIR: {FRONTEND_DIST_DIR}")
     logger.info(f"FRONTEND_DIST_DIR exists: {os.path.exists(FRONTEND_DIST_DIR)}")
     
+    # Check if this is a client-side route (no file extension or common SPA routes)
+    # Common SPA routes that should serve index.html
+    spa_routes = ['settings', 'dashboard', 'analytics', 'files', 'duplicates', 'logs']
+    
+    # If it's a known SPA route or has no file extension, serve index.html
+    if filename in spa_routes or '.' not in filename:
+        logger.info(f"Detected SPA route: {filename}, serving index.html")
+        try:
+            response = send_from_directory(FRONTEND_DIST_DIR, 'index.html')
+            logger.info(f"Successfully served index.html for SPA route: {filename}")
+            return response
+        except Exception as e:
+            logger.error(f"Error serving index.html for SPA route '{filename}': {e}")
+            return f"Internal Server Error: {str(e)}", 500
+    
+    # Otherwise, try to serve as a static file
     full_path = os.path.join(FRONTEND_DIST_DIR, filename)
     logger.info(f"Full path to serve: {full_path}")
     logger.info(f"File exists: {os.path.exists(full_path)}")
