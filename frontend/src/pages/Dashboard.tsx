@@ -25,6 +25,8 @@ interface ScanStatus {
   processing_rate?: string
   scan_duration?: string
   error_message?: string
+  skip_appdata?: boolean
+  appdata_inclusion_changed?: boolean
 }
 
 interface AnalyticsOverview {

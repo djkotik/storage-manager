@@ -18,6 +18,8 @@ interface ScanStatus {
   percentage_complete?: number
   elapsed_time?: string
   elapsed_time_formatted?: string
+  skip_appdata?: boolean
+  appdata_inclusion_changed?: boolean
 }
 
 interface FileItem {
