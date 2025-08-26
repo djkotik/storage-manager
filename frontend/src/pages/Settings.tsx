@@ -11,7 +11,7 @@ interface AppSettings {
   skip_appdata: boolean
   include_backup_shares: boolean
   comprehensive_mode: boolean
-  themes: string[]
+  themes: string
 }
 
 const Settings: React.FC = () => {
@@ -241,7 +241,7 @@ const Settings: React.FC = () => {
               Available Themes
             </label>
             <div className="flex flex-wrap gap-2">
-              {settings?.themes.map((theme) => (
+              {settings?.themes?.split(',').map((theme) => (
                 <span
                   key={theme}
                   className="px-2 py-1 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded"
