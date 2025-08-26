@@ -275,9 +275,14 @@ const Dashboard: React.FC = () => {
                     Rate: {scanStatus.processing_rate}
                   </p>
                 )}
-                {scanStatus.estimated_completion && !scanStatus.is_first_scan && (
+                {scanStatus.estimated_completion && !scanStatus.is_first_scan && !scanStatus.appdata_inclusion_changed && (
                   <p className="text-xs text-blue-700 dark:text-blue-300">
                     Estimated completion: {new Date(scanStatus.estimated_completion).toLocaleString()}
+                  </p>
+                )}
+                {scanStatus.appdata_inclusion_changed && (
+                  <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                    ⚠️ Estimated completion hidden - appdata inclusion setting changed
                   </p>
                 )}
                 
@@ -290,7 +295,10 @@ const Dashboard: React.FC = () => {
                     Start Time: {scanStatus.start_time ? new Date(scanStatus.start_time).toLocaleString() : 'Unknown'}
                   </p>
                   <p className="text-xs text-green-600 dark:text-green-400">
-                    ✅ Appdata Exclusion: Active - Appdata directories are being skipped
+                    {scanStatus.skip_appdata ? 
+                      '✅ Appdata Exclusion: Active - Appdata directories are being skipped' :
+                      'ℹ️ Appdata Inclusion: Active - Appdata directories are being scanned'
+                    }
                   </p>
                 </div>
               </div>

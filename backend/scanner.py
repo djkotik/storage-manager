@@ -451,23 +451,38 @@ class FileScanner:
                 """Check if a share should be excluded"""
                 share_lower = share_name.lower()
                 
+                # Check comprehensive mode - if enabled, only exclude appdata if skip_appdata is true
+                comprehensive_mode = get_setting('comprehensive_mode', 'false').lower() == 'true'
+                
                 # Check skip_appdata setting
                 skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
                 if skip_appdata and ('appdata' in share_lower or share_lower == 'appdata'):
                     logger.info(f"Excluding appdata share: {share_name} (skip_appdata setting enabled)")
                     return True
                 
-                # Also exclude other problematic shares
-                excluded_shares = [
-                    'cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups',
-                    'xteve', 'plex', 'emby', 'jellyfin', 'sonarr', 'radarr', 
-                    'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 
-                    'deluge', 'qbit', 'qbittorrent', 'docker', 'containers'
-                ]
+                # Check backup share inclusion setting
+                include_backup_shares = get_setting('include_backup_shares', 'false').lower() == 'true'
+                
+                # Define excluded shares based on settings
+                if comprehensive_mode:
+                    # In comprehensive mode, only exclude appdata (if skip_appdata is true) and temp/cache
+                    excluded_shares = ['cache', 'temp', 'tmp']
+                else:
+                    # Standard mode - exclude problematic shares
+                    excluded_shares = [
+                        'cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups',
+                        'xteve', 'plex', 'emby', 'jellyfin', 'sonarr', 'radarr', 
+                        'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 
+                        'deluge', 'qbit', 'qbittorrent', 'docker', 'containers'
+                    ]
+                
+                # If backup shares should be included, remove them from exclusion list
+                if include_backup_shares:
+                    excluded_shares = [s for s in excluded_shares if s not in ['backup', 'backups']]
                 
                 for excluded in excluded_shares:
                     if excluded in share_lower:
-                        logger.info(f"EXCLUDING problematic share: {share_name}")
+                        logger.info(f"EXCLUDING share: {share_name} (matches '{excluded}')")
                         return True
                 
                 return False
@@ -479,7 +494,7 @@ class FileScanner:
             
             # Enhanced timeout and stuck detection
             last_directory_time = time.time()
-            directory_timeout = 10  # 10 seconds timeout per directory
+            directory_timeout = 30  # Increased to 30 seconds timeout per directory for large shares
             last_heartbeat = time.time()
             heartbeat_interval = 5  # Log heartbeat every 5 seconds
             last_path = None

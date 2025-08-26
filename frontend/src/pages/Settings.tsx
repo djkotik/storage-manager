@@ -9,6 +9,8 @@ interface AppSettings {
   max_items_per_folder: number
 
   skip_appdata: boolean
+  include_backup_shares: boolean
+  comprehensive_mode: boolean
   themes: string[]
 }
 
@@ -22,6 +24,8 @@ const Settings: React.FC = () => {
   const [maxItemsPerFolder, setMaxItemsPerFolder] = useState(100)
 
   const [skipAppdata, setSkipAppdata] = useState(true)
+  const [includeBackupShares, setIncludeBackupShares] = useState(false)
+  const [comprehensiveMode, setComprehensiveMode] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -37,6 +41,8 @@ const Settings: React.FC = () => {
       setMaxItemsPerFolder(response.data.max_items_per_folder || 100)
 
       setSkipAppdata(response.data.skip_appdata !== false) // Default to true
+      setIncludeBackupShares(response.data.include_backup_shares === true)
+      setComprehensiveMode(response.data.comprehensive_mode === true)
     } catch (error) {
       console.error('Error fetching settings:', error)
     } finally {
@@ -53,6 +59,8 @@ const Settings: React.FC = () => {
         max_items_per_folder: maxItemsPerFolder,
 
         skip_appdata: skipAppdata,
+        include_backup_shares: includeBackupShares,
+        comprehensive_mode: comprehensiveMode,
       })
       // Show success message
       alert('Settings saved successfully!')
@@ -191,6 +199,40 @@ const Settings: React.FC = () => {
             </label>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Skip scanning the /appdata directory (contains thousands of Docker container files)
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={includeBackupShares}
+                onChange={(e) => setIncludeBackupShares(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Include Backup Shares
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Include backup and backup-related shares in scans (adds ~2TB to total)
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={comprehensiveMode}
+                onChange={(e) => setComprehensiveMode(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Comprehensive Mode
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Include most shares (only exclude appdata if enabled, temp, cache) - may increase scan time significantly
             </p>
           </div>
 

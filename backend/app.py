@@ -1269,38 +1269,52 @@ def debug_directories():
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    """Get application settings"""
-    return jsonify({
-        'data_path': get_setting('data_path', os.environ.get('DATA_PATH', '/data')),
-        'scan_time': get_setting('scan_time', '01:00'),
-        'max_scan_duration': int(get_setting('max_scan_duration', '6')),
-        'max_items_per_folder': int(get_setting('max_items_per_folder', '100')),
-
-        'skip_appdata': get_setting('skip_appdata', 'true').lower() == 'true',
-        'theme': get_setting('theme', 'unraid'),
-        'themes': ['unraid', 'plex', 'dark', 'light']
-    })
+    """Get all settings"""
+    try:
+        settings = {}
+        for setting in Setting.query.all():
+            settings[setting.key] = setting.value
+        
+        # Set defaults for missing settings
+        defaults = {
+            'scan_time': '01:00',
+            'max_scan_duration': '6',
+            'max_items_per_folder': '100',
+            'skip_appdata': 'true',
+            'include_backup_shares': 'false',  # New setting
+            'comprehensive_mode': 'false'      # New setting
+        }
+        
+        for key, default_value in defaults.items():
+            if key not in settings:
+                settings[key] = default_value
+        
+        return jsonify(settings)
+    except Exception as e:
+        logger.error(f"Error getting settings: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/settings', methods=['POST'])
 def update_settings():
-    """Update application settings"""
+    """Update settings"""
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
         
-        # Update settings in database
         for key, value in data.items():
-            if key in ['data_path', 'scan_time', 'max_scan_duration', 'theme', 'max_items_per_folder', 'skip_appdata']:
-                set_setting(key, str(value))
+            setting = Setting.query.filter_by(key=key).first()
+            if setting:
+                setting.value = str(value)
+            else:
+                setting = Setting(key=key, value=str(value))
+                db.session.add(setting)
         
-        # If scan_time was updated, reconfigure the scheduled scan
-        if 'scan_time' in data:
-            setup_scheduled_scan()
-            logger.info(f"Scheduled scan reconfigured for {data['scan_time']}")
-        
+        db.session.commit()
         return jsonify({'message': 'Settings updated successfully'})
     except Exception as e:
         logger.error(f"Error updating settings: {e}")
-        return jsonify({'error': 'Failed to update settings'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/database/reset', methods=['POST'])
 @retry_on_db_lock(max_retries=3, delay=2)
@@ -1539,6 +1553,9 @@ def get_scan_status():
             scanner_state['current_path'] = ''
             logger.info("Scan status corrected: no running scans in DB or active scanner; hiding banner")
 
+        # Get appdata exclusion setting
+        skip_appdata = get_setting('skip_appdata', 'true').lower() == 'true'
+        
         status_data = {
             'status': 'scanning' if scanner_state['scanning'] else 'idle',
             'scanning': scanner_state['scanning'],
@@ -1549,7 +1566,8 @@ def get_scan_status():
             'total_size': scanner_state['total_size'],
             'total_size_formatted': format_size(scanner_state['total_size']),
             'current_path': scanner_state['current_path'],
-            'error': scanner_state['error']
+            'error': scanner_state['error'],
+            'skip_appdata': skip_appdata
         }
         
         # Add elapsed time and duration formatting
@@ -1616,25 +1634,39 @@ def get_scan_status():
                 avg_duration = total_duration / len(recent_scans)
                 elapsed_time = datetime.now() - scanner_state['start_time']
                 
-                # Estimate completion time
-                estimated_completion = scanner_state['start_time'] + avg_duration
-                status_data['estimated_completion'] = estimated_completion.isoformat()
-                
-                # Calculate percentage complete (based on time elapsed vs average duration)
-                if avg_duration.total_seconds() > 0:
-                    percentage_complete = min(95, (elapsed_time.total_seconds() / avg_duration.total_seconds()) * 100)
-                    status_data['percentage_complete'] = round(percentage_complete, 1)
+                # If appdata is now included but previous scans excluded it, adjust estimate
+                if not skip_appdata:
+                    # Check if any recent scans had appdata excluded
+                    appdata_included_now = True
+                    # For now, we'll be conservative and not show estimates when appdata inclusion changes
+                    # This prevents misleading estimates
+                    status_data['estimated_completion'] = None
+                    status_data['percentage_complete'] = None
+                    status_data['estimated_duration'] = None
+                    status_data['is_first_scan'] = False
+                    status_data['appdata_inclusion_changed'] = True
                 else:
-                    status_data['percentage_complete'] = 0
-                
-                status_data['estimated_duration'] = str(avg_duration).split('.')[0]  # Remove microseconds
-                status_data['is_first_scan'] = False
+                    # Estimate completion time
+                    estimated_completion = scanner_state['start_time'] + avg_duration
+                    status_data['estimated_completion'] = estimated_completion.isoformat()
+                    
+                    # Calculate percentage complete (based on time elapsed vs average duration)
+                    if avg_duration.total_seconds() > 0:
+                        percentage_complete = min(95, (elapsed_time.total_seconds() / avg_duration.total_seconds()) * 100)
+                        status_data['percentage_complete'] = round(percentage_complete, 1)
+                    else:
+                        status_data['percentage_complete'] = 0
+                    
+                    status_data['estimated_duration'] = str(avg_duration).split('.')[0]  # Remove microseconds
+                    status_data['is_first_scan'] = False
+                    status_data['appdata_inclusion_changed'] = False
             else:
                 # No previous scans to base estimate on (first scan)
                 status_data['estimated_completion'] = None
                 status_data['percentage_complete'] = None  # Hide progress bar for first scan
                 status_data['estimated_duration'] = None
                 status_data['is_first_scan'] = True
+                status_data['appdata_inclusion_changed'] = False
         
         return jsonify(status_data)
     except Exception as e:
@@ -2150,19 +2182,43 @@ def get_directory_children(directory_id):
         for child in children:
             if child.is_directory:
                 # Get comprehensive folder info
-                folder_info = get_folder_info(child.path)
+                folder_info = FolderInfo.query.filter(
+                    FolderInfo.path == child.path,
+                    FolderInfo.scan_id == latest_scan.id
+                ).first()
                 
-                result.append({
-                    'id': child.id,
-                    'name': child.name,
-                    'path': child.path,
-                    'size': folder_info['total_size'],
-                    'size_formatted': format_size(folder_info['total_size']),
-                    'file_count': folder_info['file_count'],
-                    'directory_count': folder_info['directory_count'],
-                    'is_directory': True,
-                    'children': []
-                })
+                if child_folder_info and child_folder_info.total_size > 0:
+                    result.append({
+                        'id': child.id,
+                        'name': child.name,
+                        'path': child.path,
+                        'size': child_folder_info.total_size,
+                        'size_formatted': format_size(child_folder_info.total_size),
+                        'file_count': child_folder_info.file_count,
+                        'directory_count': child_folder_info.directory_count,
+                        'is_directory': True,
+                        'children': []
+                    })
+                else:
+                    # Fallback calculation
+                    child_totals = db.session.query(
+                        func.sum(FileRecord.size).label('total_size'),
+                        func.count(FileRecord.id).label('file_count')
+                    ).filter(
+                        FileRecord.path.like(f"{child.path}/%"),
+                        FileRecord.scan_id == latest_scan.id
+                    ).first()
+                    
+                    result.append({
+                        'id': child.id,
+                        'name': child.name,
+                        'path': child.path,
+                        'size': child_totals.total_size or 0,
+                        'size_formatted': format_size(child_totals.total_size or 0),
+                        'file_count': child_totals.file_count or 0,
+                        'directory_count': 0,  # Would need separate query
+                        'is_directory': True
+                    })
             else:
                 # For files, use the file's own size
                 result.append({
