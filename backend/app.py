@@ -2120,6 +2120,15 @@ def get_directory_children(directory_id):
     try:
         directory = FileRecord.query.get_or_404(directory_id)
         
+        # Always get the most recent scan regardless of status
+        latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
+        
+        if not latest_scan:
+            logger.info("No scans found. Returning empty children list.")
+            return jsonify({'children': []})
+        
+        logger.info(f"Getting children for directory {directory.path} using scan ID {latest_scan.id}")
+        
         # Get the limit from settings (default 100)
         max_items = int(get_setting('max_items_per_folder', '100'))
         
@@ -2133,7 +2142,8 @@ def get_directory_children(directory_id):
             FileRecord.extension,
             FileRecord.modified_time
         ).filter(
-            FileRecord.parent_path == directory.path
+            FileRecord.parent_path == directory.path,
+            FileRecord.scan_id == latest_scan.id
         ).order_by(FileRecord.size.desc()).limit(max_items).all()
         
         result = []

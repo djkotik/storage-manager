@@ -95,10 +95,12 @@ const Files: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ status: 'idle', scanning: false })
+  const [maxItemsPerFolder, setMaxItemsPerFolder] = useState<string>('100')
 
   useEffect(() => {
     fetchFileTree()
     fetchScanStatus()
+    fetchSettings()
     // Poll scan status every 5 seconds
     const interval = setInterval(fetchScanStatus, 5000)
     return () => clearInterval(interval)
@@ -110,6 +112,15 @@ const Files: React.FC = () => {
       setScanStatus(response.data)
     } catch (error) {
       console.error('Error fetching scan status:', error)
+    }
+  }
+
+  const fetchSettings = async () => {
+    try {
+      const response = await axios.get('/api/settings')
+      setMaxItemsPerFolder(response.data.max_items_per_folder || '100')
+    } catch (error) {
+      console.error('Error fetching settings:', error)
     }
   }
 
@@ -318,6 +329,7 @@ const Files: React.FC = () => {
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Storage Structure
+              {maxItemsPerFolder !== '100' && ` - Limited to ${maxItemsPerFolder} largest items per folder as per Settings`}
             </h3>
 
             {/* Scan Status Indicator */}
@@ -357,7 +369,7 @@ const Files: React.FC = () => {
 
         {/* File Details */}
         <div className="lg:col-span-1">
-          <div className="card p-6">
+          <div className="card p-6 sticky top-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               File Details
             </h3>
