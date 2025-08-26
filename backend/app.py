@@ -915,31 +915,36 @@ def get_folder_info(path):
         ).first()
         
         if folder_info:
-            return {
-                'total_size': folder_info.total_size,
-                'file_count': folder_info.file_count,
-                'directory_count': folder_info.directory_count,
-                'direct_file_count': folder_info.direct_file_count,
-                'direct_directory_count': folder_info.direct_directory_count
-            }
-        else:
-            # Fallback: calculate on-the-fly
-            totals = db.session.query(
-                func.sum(FileRecord.size).label('total_size'),
-                func.count(FileRecord.id).label('file_count'),
-                func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('directory_count')
-            ).filter(
-                FileRecord.path.like(f"{path}/%"),
-                FileRecord.scan_id == latest_scan.id
-            ).first()
-            
-            return {
-                'total_size': totals.total_size or 0,
-                'file_count': totals.file_count or 0,
-                'directory_count': totals.directory_count or 0,
-                'direct_file_count': 0,  # Would need separate query
-                'direct_directory_count': 0  # Would need separate query
-            }
+            # Check if FolderInfo has actual data or just empty records
+            if folder_info.total_size > 0:
+                logger.info(f"Using FolderInfo for {path}: {format_size(folder_info.total_size)}")
+                return {
+                    'total_size': folder_info.total_size,
+                    'file_count': folder_info.file_count,
+                    'directory_count': folder_info.directory_count,
+                    'direct_file_count': folder_info.direct_file_count,
+                    'direct_directory_count': folder_info.direct_directory_count
+                }
+            else:
+                logger.info(f"FolderInfo exists for {path} but has zero size, falling back to FileRecord calculation")
+        
+        # Fallback: calculate on-the-fly
+        totals = db.session.query(
+            func.sum(FileRecord.size).label('total_size'),
+            func.count(FileRecord.id).label('file_count'),
+            func.count(case((FileRecord.is_directory == True, 1), else_=None)).label('directory_count')
+        ).filter(
+            FileRecord.path.like(f"{path}/%"),
+            FileRecord.scan_id == latest_scan.id
+        ).first()
+        
+        return {
+            'total_size': totals.total_size or 0,
+            'file_count': totals.file_count or 0,
+            'directory_count': totals.directory_count or 0,
+            'direct_file_count': 0,  # Would need separate query
+            'direct_directory_count': 0  # Would need separate query
+        }
     except Exception as e:
         logger.error(f"Error getting folder info for {path}: {e}")
         return {
@@ -3258,7 +3263,7 @@ def get_folder_children_by_path(folder_path):
                     FolderInfo.scan_id == latest_scan.id
                 ).first()
                 
-                if child_folder_info:
+                if child_folder_info and child_folder_info.total_size > 0:
                     result.append({
                         'id': child.id,
                         'name': child.name,
