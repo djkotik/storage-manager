@@ -1297,6 +1297,7 @@ def get_settings():
             'max_scan_duration': '6',
             'max_items_per_folder': '100',
             'skip_appdata': 'true',
+            'skip_backup_shares': 'true',      # New setting
             'include_backup_shares': 'false',  # New setting
             'comprehensive_mode': 'false'      # New setting
         }
@@ -1381,7 +1382,7 @@ def reset_database():
             'scan_time': '01:00',
             'max_scan_duration': '6',
             'theme': 'unraid',
-            'themes': 'unraid,plex,light,dark',
+            'themes': 'unraid,plex,light,dark,sonarr,radarr',
             'max_items_per_folder': '100',
 
             'skip_appdata': 'true'  # Skip appdata by default

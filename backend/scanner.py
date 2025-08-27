@@ -460,6 +460,12 @@ class FileScanner:
                     logger.info(f"Excluding appdata share: {share_name} (skip_appdata setting enabled)")
                     return True
                 
+                # Check skip_backup_shares setting
+                skip_backup_shares = get_setting('skip_backup_shares', 'true').lower() == 'true'
+                if skip_backup_shares and (share_lower == 'backup' or share_lower == 'backups'):
+                    logger.info(f"Excluding backup share: {share_name} (skip_backup_shares setting enabled)")
+                    return True
+                
                 # Check backup share inclusion setting
                 include_backup_shares = get_setting('include_backup_shares', 'false').lower() == 'true'
                 
@@ -470,7 +476,7 @@ class FileScanner:
                 else:
                     # Standard mode - exclude problematic shares
                     excluded_shares = [
-                        'cache', 'temp', 'tmp', 'logs', 'log', 'backup', 'backups',
+                        'cache', 'temp', 'tmp', 'logs', 'log',
                         'xteve', 'plex', 'emby', 'jellyfin', 'sonarr', 'radarr', 
                         'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 
                         'deluge', 'qbit', 'qbittorrent', 'docker', 'containers'
