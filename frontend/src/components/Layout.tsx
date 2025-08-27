@@ -29,10 +29,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Plex', value: 'plex' },
     { name: 'Emby', value: 'emby' },
     { name: 'Jellyfin', value: 'jellyfin' },
-    { name: 'Sonarr', value: 'sonarr' },
-    { name: 'Radarr', value: 'radarr' },
     { name: 'Dark', value: 'dark' },
     { name: 'Light', value: 'light' },
+    { name: 'Dark Lime', value: 'dark-lime' },
   ])
   const location = useLocation()
   const { theme, setTheme, isDark } = useTheme()

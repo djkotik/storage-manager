@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 
-type Theme = 'unraid' | 'plex' | 'emby' | 'jellyfin' | 'sonarr' | 'radarr' | 'dark' | 'light'
+type Theme = 'unraid' | 'plex' | 'emby' | 'jellyfin' | 'dark' | 'light' | 'dark-lime'
 
 interface ThemeContextType {
   theme: Theme
@@ -28,7 +28,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     return (saved as Theme) || 'unraid'
   })
 
-  const isDark = theme === 'dark' || theme === 'plex' || theme === 'emby' || theme === 'jellyfin' || theme === 'sonarr' || theme === 'radarr'
+  const isDark = theme === 'dark' || theme === 'plex' || theme === 'emby' || theme === 'jellyfin' || theme === 'dark-lime'
 
   const setTheme = (newTheme: Theme) => {
     console.log('Setting theme to:', newTheme) // Debug log

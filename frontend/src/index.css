@@ -8,8 +8,8 @@
   }
   
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
-  }
+  @apply text-gray-900 dark:text-gray-100;
+}
 }
 
 @layer components {
@@ -1103,4 +1103,139 @@ select option {
 .theme-plex .scan-status-popup .text-blue-600,
 .theme-dark-lime .scan-status-popup .text-blue-600 {
   color: rgb(var(--info));
+} 
+
+/* ===== COMPREHENSIVE BACKGROUND OVERRIDES ===== */
+
+/* Global background overrides to remove blue backgrounds */
+.theme-unraid,
+.theme-light,
+.theme-dark,
+.theme-plex,
+.theme-dark-lime {
+  background-color: rgb(var(--background)) !important;
+}
+
+/* Body background overrides */
+.theme-unraid body,
+.theme-light body,
+.theme-dark body,
+.theme-plex body,
+.theme-dark-lime body {
+  background-color: rgb(var(--background)) !important;
+}
+
+/* Main container background overrides */
+.theme-unraid .bg-gray-50,
+.theme-light .bg-gray-50,
+.theme-dark .bg-gray-50,
+.theme-plex .bg-gray-50,
+.theme-dark-lime .bg-gray-50 {
+  background-color: rgb(var(--background)) !important;
+}
+
+/* Dark mode background overrides */
+.theme-unraid .dark .bg-gray-900,
+.theme-light .dark .bg-gray-900,
+.theme-dark .dark .bg-gray-900,
+.theme-plex .dark .bg-gray-900,
+.theme-dark-lime .dark .bg-gray-900 {
+  background-color: rgb(var(--background)) !important;
+}
+
+/* Layout container background overrides */
+.theme-unraid .flex.h-screen,
+.theme-light .flex.h-screen,
+.theme-dark .flex.h-screen,
+.theme-plex .flex.h-screen,
+.theme-dark-lime .flex.h-screen {
+  background-color: rgb(var(--background)) !important;
+}
+
+/* Sidebar background overrides */
+.theme-unraid .bg-white,
+.theme-light .bg-white,
+.theme-dark .bg-white,
+.theme-plex .bg-white,
+.theme-dark-lime .bg-white {
+  background-color: rgb(var(--card)) !important;
+}
+
+/* Dark mode sidebar background overrides */
+.theme-unraid .dark .bg-gray-800,
+.theme-light .dark .bg-gray-800,
+.theme-dark .dark .bg-gray-800,
+.theme-plex .dark .bg-gray-800,
+.theme-dark-lime .dark .bg-gray-800 {
+  background-color: rgb(var(--card)) !important;
+}
+
+/* Card background overrides */
+.theme-unraid .card,
+.theme-light .card,
+.theme-dark .card,
+.theme-plex .card,
+.theme-dark-lime .card {
+  background-color: rgb(var(--card)) !important;
+}
+
+/* Input background overrides */
+.theme-unraid .input,
+.theme-light .input,
+.theme-dark .input,
+.theme-plex .input,
+.theme-dark-lime .input {
+  background-color: rgb(var(--input)) !important;
+}
+
+/* Modal and overlay background overrides */
+.theme-unraid .bg-black,
+.theme-light .bg-black,
+.theme-dark .bg-black,
+.theme-plex .bg-black,
+.theme-dark-lime .bg-black {
+  background-color: rgb(var(--background)) !important;
+}
+
+/* Ensure no blue backgrounds anywhere */
+.theme-unraid *,
+.theme-light *,
+.theme-dark *,
+.theme-plex *,
+.theme-dark-lime * {
+  background-color: inherit;
+}
+
+/* Specific overrides for common Tailwind classes that might be causing blue backgrounds */
+.theme-unraid .bg-blue-50,
+.theme-light .bg-blue-50,
+.theme-dark .bg-blue-50,
+.theme-plex .bg-blue-50,
+.theme-dark-lime .bg-blue-50 {
+  background-color: rgb(var(--muted)) !important;
+}
+
+.theme-unraid .bg-blue-100,
+.theme-light .bg-blue-100,
+.theme-dark .bg-blue-100,
+.theme-plex .bg-blue-100,
+.theme-dark-lime .bg-blue-100 {
+  background-color: rgb(var(--accent)) !important;
+}
+
+/* Ensure proper text colors */
+.theme-unraid .text-gray-900,
+.theme-light .text-gray-900,
+.theme-dark .text-gray-900,
+.theme-plex .text-gray-900,
+.theme-dark-lime .text-gray-900 {
+  color: rgb(var(--foreground)) !important;
+}
+
+.theme-unraid .text-gray-700,
+.theme-light .text-gray-700,
+.theme-dark .text-gray-700,
+.theme-plex .text-gray-700,
+.theme-dark-lime .text-gray-700 {
+  color: rgb(var(--muted-foreground)) !important;
 } 
