@@ -762,4 +762,271 @@ select option {
 .theme-sonarr .dark .text-blue-100,
 .theme-radarr .dark .text-blue-100 {
   color: rgb(var(--primary-foreground));
+}
+
+/* ===== POPUP AND NOTIFICATION THEMING ===== */
+
+/* Alert/Notification styling for all themes */
+.theme-unraid .bg-green-50,
+.theme-unraid .bg-blue-50,
+.theme-unraid .bg-yellow-50,
+.theme-unraid .bg-red-50 {
+  background-color: rgb(var(--card));
+}
+
+.theme-unraid .border-green-200,
+.theme-unraid .border-blue-200,
+.theme-unraid .border-yellow-200,
+.theme-unraid .border-red-200 {
+  border-color: rgb(var(--border));
+}
+
+.theme-unraid .text-green-800,
+.theme-unraid .text-blue-800,
+.theme-unraid .text-yellow-800,
+.theme-unraid .text-red-800 {
+  color: rgb(var(--foreground));
+}
+
+.theme-unraid .text-green-700,
+.theme-unraid .text-blue-700,
+.theme-unraid .text-yellow-700,
+.theme-unraid .text-red-700 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Light theme popup styling */
+.theme-light .bg-green-50,
+.theme-light .bg-blue-50,
+.theme-light .bg-yellow-50,
+.theme-light .bg-red-50 {
+  background-color: rgb(var(--card));
+}
+
+.theme-light .border-green-200,
+.theme-light .border-blue-200,
+.theme-light .border-yellow-200,
+.theme-light .border-red-200 {
+  border-color: rgb(var(--border));
+}
+
+.theme-light .text-green-800,
+.theme-light .text-blue-800,
+.theme-light .text-yellow-800,
+.theme-light .text-red-800 {
+  color: rgb(var(--foreground));
+}
+
+.theme-light .text-green-700,
+.theme-light .text-blue-700,
+.theme-light .text-yellow-700,
+.theme-light .text-red-700 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Dark theme popup styling */
+.theme-dark .bg-green-50,
+.theme-dark .bg-blue-50,
+.theme-dark .bg-yellow-50,
+.theme-dark .bg-red-50 {
+  background-color: rgb(var(--card));
+}
+
+.theme-dark .border-green-200,
+.theme-dark .border-blue-200,
+.theme-dark .border-yellow-200,
+.theme-dark .border-red-200 {
+  border-color: rgb(var(--border));
+}
+
+.theme-dark .text-green-800,
+.theme-dark .text-blue-800,
+.theme-dark .text-yellow-800,
+.theme-dark .text-red-800 {
+  color: rgb(var(--foreground));
+}
+
+.theme-dark .text-green-700,
+.theme-dark .text-blue-700,
+.theme-dark .text-yellow-700,
+.theme-dark .text-red-700 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Plex theme popup styling */
+.theme-plex .bg-green-50,
+.theme-plex .bg-blue-50,
+.theme-plex .bg-yellow-50,
+.theme-plex .bg-red-50 {
+  background-color: rgb(var(--card));
+}
+
+.theme-plex .border-green-200,
+.theme-plex .border-blue-200,
+.theme-plex .border-yellow-200,
+.theme-plex .border-red-200 {
+  border-color: rgb(var(--border));
+}
+
+.theme-plex .text-green-800,
+.theme-plex .text-blue-800,
+.theme-plex .text-yellow-800,
+.theme-plex .text-red-800 {
+  color: rgb(var(--foreground));
+}
+
+.theme-plex .text-green-700,
+.theme-plex .text-blue-700,
+.theme-plex .text-yellow-700,
+.theme-plex .text-red-700 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Modal and overlay styling */
+.theme-unraid .bg-black,
+.theme-unraid .bg-opacity-50 {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.theme-unraid .bg-white {
+  background-color: rgb(var(--card));
+}
+
+.theme-unraid .text-gray-900 {
+  color: rgb(var(--foreground));
+}
+
+.theme-unraid .text-gray-600 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Light theme modal styling */
+.theme-light .bg-black,
+.theme-light .bg-opacity-50 {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.theme-light .bg-white {
+  background-color: rgb(var(--card));
+}
+
+.theme-light .text-gray-900 {
+  color: rgb(var(--foreground));
+}
+
+.theme-light .text-gray-600 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Dark theme modal styling */
+.theme-dark .bg-black,
+.theme-dark .bg-opacity-50 {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.theme-dark .bg-white {
+  background-color: rgb(var(--card));
+}
+
+.theme-dark .text-gray-900 {
+  color: rgb(var(--foreground));
+}
+
+.theme-dark .text-gray-600 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Plex theme modal styling */
+.theme-plex .bg-black,
+.theme-plex .bg-opacity-50 {
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.theme-plex .bg-white {
+  background-color: rgb(var(--card));
+}
+
+.theme-plex .text-gray-900 {
+  color: rgb(var(--foreground));
+}
+
+.theme-plex .text-gray-600 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Toast notification styling */
+.theme-unraid .toast,
+.theme-light .toast,
+.theme-dark .toast,
+.theme-plex .toast {
+  background-color: rgb(var(--card));
+  border-color: rgb(var(--border));
+  color: rgb(var(--foreground));
+}
+
+/* Success/Error/Warning/Info message styling */
+.theme-unraid .bg-green-100,
+.theme-light .bg-green-100,
+.theme-dark .bg-green-100,
+.theme-plex .bg-green-100 {
+  background-color: rgb(var(--success) / 0.1);
+}
+
+.theme-unraid .bg-red-100,
+.theme-light .bg-red-100,
+.theme-dark .bg-red-100,
+.theme-plex .bg-red-100 {
+  background-color: rgb(var(--destructive) / 0.1);
+}
+
+.theme-unraid .bg-yellow-100,
+.theme-light .bg-yellow-100,
+.theme-dark .bg-yellow-100,
+.theme-plex .bg-yellow-100 {
+  background-color: rgb(var(--warning) / 0.1);
+}
+
+.theme-unraid .bg-blue-100,
+.theme-light .bg-blue-100,
+.theme-dark .bg-blue-100,
+.theme-plex .bg-blue-100 {
+  background-color: rgb(var(--info) / 0.1);
+}
+
+/* Scan status popup specific styling */
+.theme-unraid .scan-status-popup,
+.theme-light .scan-status-popup,
+.theme-dark .scan-status-popup,
+.theme-plex .scan-status-popup {
+  background-color: rgb(var(--card));
+  border-color: rgb(var(--border));
+  color: rgb(var(--foreground));
+}
+
+.theme-unraid .scan-status-popup .text-green-600,
+.theme-light .scan-status-popup .text-green-600,
+.theme-dark .scan-status-popup .text-green-600,
+.theme-plex .scan-status-popup .text-green-600 {
+  color: rgb(var(--success));
+}
+
+.theme-unraid .scan-status-popup .text-red-600,
+.theme-light .scan-status-popup .text-red-600,
+.theme-dark .scan-status-popup .text-red-600,
+.theme-plex .scan-status-popup .text-red-600 {
+  color: rgb(var(--destructive));
+}
+
+.theme-unraid .scan-status-popup .text-yellow-600,
+.theme-light .scan-status-popup .text-yellow-600,
+.theme-dark .scan-status-popup .text-yellow-600,
+.theme-plex .scan-status-popup .text-yellow-600 {
+  color: rgb(var(--warning));
+}
+
+.theme-unraid .scan-status-popup .text-blue-600,
+.theme-light .scan-status-popup .text-blue-600,
+.theme-dark .scan-status-popup .text-blue-600,
+.theme-plex .scan-status-popup .text-blue-600 {
+  color: rgb(var(--info));
 } 
