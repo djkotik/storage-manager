@@ -50,7 +50,7 @@
   --input: 226 232 240;
   --ring: 243 121 32;
   --muted: 245 245 245;
-  --muted-foreground: 107 114 128;
+  --muted-foreground: 75 85 99; /* Darker text for better readability */
   --accent: 243 121 32;
   --accent-foreground: 255 255 255;
   --destructive: 220 38 38;
@@ -73,7 +73,7 @@
 
 /* ===== LIGHT THEME ===== */
 .theme-light {
-  --primary: 59 130 246; /* Blue */
+  --primary: 37 99 235; /* Blue-600 */
   --primary-foreground: 255 255 255;
   --background: 255 255 255;
   --foreground: 15 23 42;
@@ -81,9 +81,9 @@
   --card-foreground: 15 23 42;
   --border: 226 232 240;
   --input: 226 232 240;
-  --ring: 59 130 246;
+  --ring: 37 99 235;
   --muted: 248 250 252;
-  --muted-foreground: 100 116 139;
+  --muted-foreground: 71 85 105;
   --accent: 241 245 249;
   --accent-foreground: 15 23 42;
   --destructive: 239 68 68;
@@ -95,15 +95,15 @@
 
 /* ===== DARK THEME ===== */
 .theme-dark {
-  --primary: 59 130 246;
-  --primary-foreground: 255 255 255;
+  --primary: 96 165 250; /* Blue-400 */
+  --primary-foreground: 15 23 42;
   --background: 15 23 42;
   --foreground: 248 250 252;
   --card: 30 41 59;
   --card-foreground: 248 250 252;
   --border: 51 65 85;
   --input: 51 65 85;
-  --ring: 59 130 246;
+  --ring: 96 165 250;
   --muted: 30 41 59;
   --muted-foreground: 148 163 184;
   --accent: 51 65 85;
@@ -117,19 +117,19 @@
 
 /* ===== PLEX THEME ===== */
 .theme-plex {
-  --primary: 217 70 239; /* Purple */
-  --primary-foreground: 255 255 255;
-  --background: 255 255 255;
-  --foreground: 15 23 42;
-  --card: 255 255 255;
-  --card-foreground: 15 23 42;
-  --border: 226 232 240;
-  --input: 226 232 240;
-  --ring: 217 70 239;
-  --muted: 248 250 252;
-  --muted-foreground: 100 116 139;
-  --accent: 241 245 249;
-  --accent-foreground: 15 23 42;
+  --primary: 245 158 11; /* Yellow/Orange like Plex logo */
+  --primary-foreground: 0 0 0;
+  --background: 0 0 0; /* Black background like Plex */
+  --foreground: 255 255 255;
+  --card: 15 15 15; /* Very dark grey */
+  --card-foreground: 255 255 255;
+  --border: 38 38 38;
+  --input: 38 38 38;
+  --ring: 245 158 11;
+  --muted: 15 15 15;
+  --muted-foreground: 156 163 175;
+  --accent: 38 38 38;
+  --accent-foreground: 255 255 255;
   --destructive: 239 68 68;
   --destructive-foreground: 255 255 255;
   --success: 34 197 94;
@@ -138,16 +138,16 @@
 }
 
 .theme-plex.dark {
-  --background: 15 23 42;
-  --foreground: 248 250 252;
-  --card: 30 41 59;
-  --card-foreground: 248 250 252;
-  --border: 51 65 85;
-  --input: 51 65 85;
-  --muted: 30 41 59;
-  --muted-foreground: 148 163 184;
-  --accent: 51 65 85;
-  --accent-foreground: 248 250 252;
+  --background: 0 0 0;
+  --foreground: 255 255 255;
+  --card: 15 15 15;
+  --card-foreground: 255 255 255;
+  --border: 38 38 38;
+  --input: 38 38 38;
+  --muted: 15 15 15;
+  --muted-foreground: 156 163 175;
+  --accent: 38 38 38;
+  --accent-foreground: 255 255 255;
 }
 
 /* ===== EMBY THEME ===== */
@@ -597,4 +597,151 @@ select option {
 
 .theme-unraid .hover\:bg-gray-200:hover {
   background-color: rgb(var(--accent) / 0.8);
+}
+
+/* ===== COMPREHENSIVE THEME OVERRIDES ===== */
+
+/* Navigation active states */
+.theme-unraid .bg-blue-100 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-unraid .text-blue-900 {
+  color: rgb(var(--primary-foreground));
+}
+
+.theme-unraid .bg-blue-900 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-unraid .text-blue-100 {
+  color: rgb(var(--primary-foreground));
+}
+
+/* Inactive navigation items - darker text for better readability */
+.theme-unraid .text-gray-600 {
+  color: rgb(75 85 99); /* Darker grey */
+}
+
+.theme-unraid .text-gray-300 {
+  color: rgb(75 85 99); /* Darker grey */
+}
+
+/* Detailed Logs section - light background with dark text */
+.theme-unraid .bg-gray-800 {
+  background-color: rgb(var(--card));
+}
+
+.theme-unraid .bg-gray-700 {
+  background-color: rgb(var(--muted));
+}
+
+.theme-unraid .text-gray-100 {
+  color: rgb(var(--foreground));
+}
+
+.theme-unraid .text-gray-300 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Light theme specific overrides */
+.theme-light .bg-blue-100 {
+  background-color: rgb(var(--primary) / 0.1);
+}
+
+.theme-light .text-blue-900 {
+  color: rgb(var(--primary));
+}
+
+.theme-light .bg-blue-900 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-light .text-blue-100 {
+  color: rgb(var(--primary-foreground));
+}
+
+.theme-light .text-gray-600 {
+  color: rgb(71 85 105); /* Darker grey */
+}
+
+.theme-light .text-gray-300 {
+  color: rgb(71 85 105); /* Darker grey */
+}
+
+/* Dark theme specific overrides */
+.theme-dark .bg-blue-100 {
+  background-color: rgb(var(--primary) / 0.2);
+}
+
+.theme-dark .text-blue-900 {
+  color: rgb(var(--primary));
+}
+
+.theme-dark .bg-blue-900 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-dark .text-blue-100 {
+  color: rgb(var(--primary-foreground));
+}
+
+/* Plex theme specific overrides */
+.theme-plex .bg-blue-100 {
+  background-color: rgb(var(--primary) / 0.2);
+}
+
+.theme-plex .text-blue-900 {
+  color: rgb(var(--primary));
+}
+
+.theme-plex .bg-blue-900 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-plex .text-blue-100 {
+  color: rgb(var(--primary-foreground));
+}
+
+.theme-plex .text-gray-600 {
+  color: rgb(156 163 175); /* Light grey on dark background */
+}
+
+.theme-plex .text-gray-300 {
+  color: rgb(156 163 175); /* Light grey on dark background */
+}
+
+/* Ensure all themes have proper contrast for navigation */
+.theme-unraid .dark .text-gray-300,
+.theme-light .dark .text-gray-300,
+.theme-dark .dark .text-gray-300,
+.theme-plex .dark .text-gray-300,
+.theme-emby .dark .text-gray-300,
+.theme-jellyfin .dark .text-gray-300,
+.theme-sonarr .dark .text-gray-300,
+.theme-radarr .dark .text-gray-300 {
+  color: rgb(var(--muted-foreground));
+}
+
+/* Ensure proper contrast for active navigation items in all themes */
+.theme-unraid .dark .bg-blue-900,
+.theme-light .dark .bg-blue-900,
+.theme-dark .dark .bg-blue-900,
+.theme-plex .dark .bg-blue-900,
+.theme-emby .dark .bg-blue-900,
+.theme-jellyfin .dark .bg-blue-900,
+.theme-sonarr .dark .bg-blue-900,
+.theme-radarr .dark .bg-blue-900 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-unraid .dark .text-blue-100,
+.theme-light .dark .text-blue-100,
+.theme-dark .dark .text-blue-100,
+.theme-plex .dark .text-blue-100,
+.theme-emby .dark .text-blue-100,
+.theme-jellyfin .dark .text-blue-100,
+.theme-sonarr .dark .text-blue-100,
+.theme-radarr .dark .text-blue-100 {
+  color: rgb(var(--primary-foreground));
 } 
