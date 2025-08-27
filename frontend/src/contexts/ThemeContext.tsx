@@ -41,7 +41,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     console.log('Applying theme:', theme) // Debug log
     
     // Remove all theme classes
-    root.classList.remove('theme-unraid', 'theme-plex', 'theme-emby', 'theme-jellyfin', 'theme-sonarr', 'theme-radarr', 'theme-dark', 'theme-light', 'dark')
+    root.classList.remove('theme-unraid', 'theme-plex', 'theme-emby', 'theme-jellyfin', 'theme-dark', 'theme-light', 'dark')
     
     // Add the current theme class
     root.classList.add(`theme-${theme}`)

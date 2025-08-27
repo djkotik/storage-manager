@@ -1382,7 +1382,7 @@ def reset_database():
             'scan_time': '01:00',
             'max_scan_duration': '6',
             'theme': 'unraid',
-            'themes': 'unraid,plex,light,dark,sonarr,radarr,dark-lime',
+            'themes': 'unraid,plex,light,dark,dark-lime',
             'max_items_per_folder': '100',
 
             'skip_appdata': 'true'  # Skip appdata by default
@@ -3450,7 +3450,7 @@ if __name__ == '__main__':
             if not get_setting('theme'):
                 set_setting('theme', 'unraid')
             if not get_setting('themes'):
-                set_setting('themes', 'unraid,plex,light,dark,sonarr,radarr,dark-lime')
+                set_setting('themes', 'unraid,plex,light,dark,dark-lime')
             if not get_setting('max_items_per_folder'):
                 set_setting('max_items_per_folder', '100')
 
