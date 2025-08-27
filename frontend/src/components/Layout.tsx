@@ -55,8 +55,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         console.log('Fetched settings:', settings) // Debug log
         
         // Update available themes from backend
-        if (settings.themes && Array.isArray(settings.themes)) {
-          const themes = settings.themes.map((themeValue: string) => ({
+        if (settings.themes) {
+          const themes = settings.themes.split(',').map((themeValue: string) => ({
             name: themeValue.charAt(0).toUpperCase() + themeValue.slice(1),
             value: themeValue
           }))
