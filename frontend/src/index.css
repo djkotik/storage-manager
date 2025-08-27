@@ -75,7 +75,7 @@
 .theme-light {
   --primary: 37 99 235; /* Blue-600 */
   --primary-foreground: 255 255 255;
-  --background: 245 245 245; /* Light grey like unRAID */
+  --background: 240 240 240; /* Light grey background */
   --foreground: 15 23 42; /* Dark blue text */
   --card: 255 255 255; /* White cards */
   --card-foreground: 15 23 42;
@@ -83,7 +83,7 @@
   --input: 226 232 240;
   --ring: 37 99 235;
   --muted: 245 245 245;
-  --muted-foreground: 71 85 105;
+  --muted-foreground: 51 65 85; /* Darker grey for better readability */
   --accent: 241 245 249;
   --accent-foreground: 15 23 42;
   --destructive: 239 68 68;
@@ -119,9 +119,9 @@
 .theme-plex {
   --primary: 245 158 11; /* Yellow/Orange like Plex logo */
   --primary-foreground: 0 0 0;
-  --background: 0 0 0; /* Black background like Plex */
+  --background: 51 51 51; /* Dark grey background instead of black */
   --foreground: 255 255 255;
-  --card: 0 0 0; /* Pure black */
+  --card: 0 0 0; /* Pure black cards */
   --card-foreground: 255 255 255;
   --border: 38 38 38;
   --input: 38 38 38;
@@ -618,6 +618,22 @@ select option {
   color: rgb(var(--primary-foreground));
 }
 
+/* Plex theme navigation - yellow items, yellow background for active tab */
+.theme-plex .text-gray-600,
+.theme-plex .text-gray-300 {
+  color: rgb(var(--primary)); /* Yellow for menu items */
+}
+
+.theme-plex .bg-blue-100,
+.theme-plex .bg-blue-900 {
+  background-color: rgb(var(--primary)); /* Yellow background for active tab */
+}
+
+.theme-plex .text-blue-900,
+.theme-plex .text-blue-100 {
+  color: rgb(var(--primary-foreground)); /* White text for active tab */
+}
+
 /* Inactive navigation items - darker text for better readability */
 .theme-unraid .text-gray-600 {
   color: rgb(75 85 99); /* Darker grey */
@@ -685,6 +701,37 @@ select option {
 
 .theme-light .text-white {
   color: rgb(var(--foreground));
+}
+
+/* Additional overrides for Detailed System Logs to ensure light background with dark text */
+.theme-unraid .bg-gray-800,
+.theme-unraid .bg-gray-900,
+.theme-unraid .bg-black {
+  background-color: rgb(var(--card)) !important; /* Force light background */
+}
+
+.theme-unraid .text-gray-100,
+.theme-unraid .text-gray-200,
+.theme-unraid .text-white {
+  color: rgb(var(--foreground)) !important; /* Force dark text */
+}
+
+.theme-light .bg-gray-800,
+.theme-light .bg-gray-900,
+.theme-light .bg-black {
+  background-color: rgb(var(--card)) !important; /* Force light background */
+}
+
+.theme-light .text-gray-100,
+.theme-light .text-gray-200,
+.theme-light .text-white {
+  color: rgb(var(--foreground)) !important; /* Force dark text */
+}
+
+/* Make text in Top File Types and Top Folder Shares darker for better readability */
+.theme-light .text-gray-500,
+.theme-light .text-gray-400 {
+  color: rgb(51 65 85) !important; /* Darker grey for better readability */
 }
 
 /* Dark theme specific overrides */
