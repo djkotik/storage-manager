@@ -26,7 +26,6 @@ const Settings: React.FC = () => {
 
   const [skipAppdata, setSkipAppdata] = useState(true)
   const [skipBackupShares, setSkipBackupShares] = useState(true)
-  const [includeBackupShares, setIncludeBackupShares] = useState(false)
   const [comprehensiveMode, setComprehensiveMode] = useState(false)
 
   useEffect(() => {
@@ -44,7 +43,6 @@ const Settings: React.FC = () => {
 
       setSkipAppdata(response.data.skip_appdata !== false) // Default to true
       setSkipBackupShares(response.data.skip_backup_shares !== false) // Default to true
-      setIncludeBackupShares(response.data.include_backup_shares === true)
       setComprehensiveMode(response.data.comprehensive_mode === true)
     } catch (error) {
       console.error('Error fetching settings:', error)
@@ -63,7 +61,6 @@ const Settings: React.FC = () => {
 
         skip_appdata: skipAppdata,
         skip_backup_shares: skipBackupShares,
-        include_backup_shares: includeBackupShares,
         comprehensive_mode: comprehensiveMode,
       })
       // Show success message
@@ -219,24 +216,7 @@ const Settings: React.FC = () => {
                </span>
              </label>
              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-               Skip scanning any shares with the name 'backup' or 'backups'
-             </p>
-           </div>
-
-           <div>
-             <label className="flex items-center space-x-2">
-               <input
-                 type="checkbox"
-                 checked={includeBackupShares}
-                 onChange={(e) => setIncludeBackupShares(e.target.checked)}
-                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-               />
-               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                 Include Backup Shares
-               </span>
-             </label>
-             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-               Include backup and backup-related shares in scans (adds ~2TB to total)
+               Skip scanning any shares with the name 'backup' or 'backups' (case insensitive)
              </p>
            </div>
 

@@ -41,7 +41,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     console.log('Applying theme:', theme) // Debug log
     
     // Remove all theme classes
-    root.classList.remove('theme-unraid', 'theme-plex', 'theme-emby', 'theme-jellyfin', 'theme-dark', 'theme-light', 'dark')
+    root.classList.remove('theme-unraid', 'theme-plex', 'theme-emby', 'theme-jellyfin', 'theme-dark', 'theme-light', 'theme-dark-lime', 'dark')
     
     // Add the current theme class
     root.classList.add(`theme-${theme}`)
@@ -50,6 +50,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     if (isDark) {
       root.classList.add('dark')
     }
+    
+    // Force a re-render by triggering a resize event
+    window.dispatchEvent(new Event('resize'))
   }, [theme, isDark])
 
   return (

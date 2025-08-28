@@ -62,13 +62,23 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           setAvailableThemes(themes)
           console.log('Updated available themes:', themes) // Debug log
         }
-        
-        // Sync theme with backend
-        if (settings.theme && settings.theme !== theme) {
-          setTheme(settings.theme)
-        }
       } catch (error) {
         console.error('Error fetching settings:', error)
+      }
+    }
+    
+    const fetchTheme = async () => {
+      try {
+        const response = await axios.get('/api/theme')
+        const currentTheme = response.data.theme
+        console.log('Fetched theme:', currentTheme) // Debug log
+        
+        // Sync theme with backend
+        if (currentTheme && currentTheme !== theme) {
+          setTheme(currentTheme)
+        }
+      } catch (error) {
+        console.error('Error fetching theme:', error)
       }
     }
     
@@ -82,18 +92,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
     
     fetchSettings()
+    fetchTheme()
     fetchVersion()
   }, [theme, setTheme])
 
   const handleThemeChange = async (newTheme: string) => {
     try {
       console.log('Changing theme to:', newTheme) // Debug log
-      // Update backend settings
-      await axios.post('/api/settings', { theme: newTheme })
-      // Update local theme
+      // Update local theme first for immediate response
       setTheme(newTheme as any)
+      // Update backend theme setting
+      await axios.post('/api/theme', { theme: newTheme })
     } catch (error) {
       console.error('Error updating theme:', error)
+      // Revert to previous theme if backend update fails
+      setTheme(theme)
     }
   }
 

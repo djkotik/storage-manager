@@ -585,7 +585,13 @@ select option {
 
 .theme-plex .text-blue-900,
 .theme-plex .text-blue-100 {
-  color: rgb(var(--primary-foreground)) !important; /* White text for active tab */
+  color: rgb(var(--primary-foreground)) !important; /* Black text for active tab */
+}
+
+/* Plex theme folder icons in Usage Explorer */
+.theme-plex .text-gray-600 svg,
+.theme-plex .text-gray-300 svg {
+  color: rgb(var(--primary)) !important; /* Yellow for folder icons */
 }
 
 /* Dark Lime theme navigation - green items, green background for active tab */
@@ -602,6 +608,12 @@ select option {
 .theme-dark-lime .text-blue-900,
 .theme-dark-lime .text-blue-100 {
   color: rgb(var(--primary-foreground)) !important; /* Black text for active tab */
+}
+
+/* Dark Lime theme folder icons in Usage Explorer */
+.theme-dark-lime .text-gray-600 svg,
+.theme-dark-lime .text-gray-300 svg {
+  color: rgb(var(--primary)) !important; /* Green for folder icons */
 }
 
 /* Inactive navigation items - darker text for better readability */
@@ -702,6 +714,13 @@ select option {
 .theme-light .text-gray-500,
 .theme-light .text-gray-400 {
   color: rgb(51 65 85) !important; /* Darker grey for better readability */
+}
+
+/* Light theme filetype text - ensure white text for better readability */
+.theme-light .text-gray-900,
+.theme-light .text-gray-700,
+.theme-light .text-gray-600 {
+  color: rgb(15 23 42) !important; /* Dark text for better readability */
 }
 
 /* Dark theme specific overrides */

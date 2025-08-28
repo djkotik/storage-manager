@@ -1297,9 +1297,9 @@ def get_settings():
             'max_scan_duration': '6',
             'max_items_per_folder': '100',
             'skip_appdata': 'true',
-            'skip_backup_shares': 'true',      # New setting
-            'include_backup_shares': 'false',  # New setting
-            'comprehensive_mode': 'false'      # New setting
+            'skip_backup_shares': 'true',      # Skip backup shares by default
+            'comprehensive_mode': 'false',     # New setting
+            'theme': 'unraid'                  # Default theme
         }
         
         for key, default_value in defaults.items():
@@ -1323,6 +1323,7 @@ def update_settings():
             setting = Settings.query.filter_by(key=key).first()
             if setting:
                 setting.value = str(value)
+                setting.updated_at = datetime.utcnow()
             else:
                 setting = Settings(key=key, value=str(value))
                 db.session.add(setting)
@@ -1331,6 +1332,40 @@ def update_settings():
         return jsonify({'message': 'Settings updated successfully'})
     except Exception as e:
         logger.error(f"Error updating settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/theme', methods=['GET'])
+def get_theme():
+    """Get current theme setting"""
+    try:
+        theme_setting = Settings.query.filter_by(key='theme').first()
+        theme = theme_setting.value if theme_setting else 'unraid'
+        return jsonify({'theme': theme})
+    except Exception as e:
+        logger.error(f"Error getting theme: {e}")
+        return jsonify({'theme': 'unraid'})
+
+@app.route('/api/theme', methods=['POST'])
+def update_theme():
+    """Update theme setting"""
+    try:
+        data = request.get_json()
+        if not data or 'theme' not in data:
+            return jsonify({'error': 'No theme provided'}), 400
+        
+        theme = data['theme']
+        setting = Settings.query.filter_by(key='theme').first()
+        if setting:
+            setting.value = theme
+            setting.updated_at = datetime.utcnow()
+        else:
+            setting = Settings(key='theme', value=theme)
+            db.session.add(setting)
+        
+        db.session.commit()
+        return jsonify({'message': 'Theme updated successfully', 'theme': theme})
+    except Exception as e:
+        logger.error(f"Error updating theme: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/database/reset', methods=['POST'])

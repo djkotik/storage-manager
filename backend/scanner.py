@@ -462,12 +462,9 @@ class FileScanner:
                 
                 # Check skip_backup_shares setting
                 skip_backup_shares = get_setting('skip_backup_shares', 'true').lower() == 'true'
-                if skip_backup_shares and (share_lower == 'backup' or share_lower == 'backups'):
+                if skip_backup_shares and 'backup' in share_lower:
                     logger.info(f"Excluding backup share: {share_name} (skip_backup_shares setting enabled)")
                     return True
-                
-                # Check backup share inclusion setting
-                include_backup_shares = get_setting('include_backup_shares', 'false').lower() == 'true'
                 
                 # Define excluded shares based on settings
                 if comprehensive_mode:
@@ -481,10 +478,6 @@ class FileScanner:
                         'lidarr', 'readarr', 'sabnzbd', 'nzbget', 'transmission', 
                         'deluge', 'qbit', 'qbittorrent', 'docker', 'containers'
                     ]
-                
-                # If backup shares should be included, remove them from exclusion list
-                if include_backup_shares:
-                    excluded_shares = [s for s in excluded_shares if s not in ['backup', 'backups']]
                 
                 for excluded in excluded_shares:
                     if excluded in share_lower:
