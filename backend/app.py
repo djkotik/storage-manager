@@ -2204,15 +2204,15 @@ def get_directory_children(directory_id):
                     FolderInfo.scan_id == latest_scan.id
                 ).first()
                 
-                if child_folder_info and child_folder_info.total_size > 0:
+                if folder_info and folder_info.total_size > 0:
                     result.append({
                         'id': child.id,
                         'name': child.name,
                         'path': child.path,
-                        'size': child_folder_info.total_size,
-                        'size_formatted': format_size(child_folder_info.total_size),
-                        'file_count': child_folder_info.file_count,
-                        'directory_count': child_folder_info.directory_count,
+                        'size': folder_info.total_size,
+                        'size_formatted': format_size(folder_info.total_size),
+                        'file_count': folder_info.file_count,
+                        'directory_count': folder_info.directory_count,
                         'is_directory': True,
                         'children': []
                     })
