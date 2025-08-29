@@ -73,8 +73,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         const currentTheme = response.data.theme
         console.log('Fetched theme:', currentTheme) // Debug log
         
-        // Sync theme with backend
-        if (currentTheme && currentTheme !== theme) {
+        // Only sync theme if it's different and we don't have a local theme set
+        const localTheme = localStorage.getItem('theme')
+        if (currentTheme && currentTheme !== theme && !localTheme) {
           setTheme(currentTheme)
         }
       } catch (error) {
@@ -94,19 +95,25 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     fetchSettings()
     fetchTheme()
     fetchVersion()
-  }, [theme, setTheme])
+  }, [setTheme]) // Removed theme dependency to prevent loops
 
   const handleThemeChange = async (newTheme: string) => {
     try {
       console.log('Changing theme to:', newTheme) // Debug log
       // Update local theme first for immediate response
       setTheme(newTheme as any)
-      // Update backend theme setting
-      await axios.post('/api/theme', { theme: newTheme })
+      // Update backend theme setting with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Theme update timeout')), 5000)
+      )
+      await Promise.race([
+        axios.post('/api/theme', { theme: newTheme }),
+        timeoutPromise
+      ])
     } catch (error) {
       console.error('Error updating theme:', error)
-      // Revert to previous theme if backend update fails
-      setTheme(theme)
+      // Don't revert theme on error - keep user's choice
+      // The theme will persist in localStorage anyway
     }
   }
 
