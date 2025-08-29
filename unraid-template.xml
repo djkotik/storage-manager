@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<Container>
+  <Name>Storage Analyzer</Name>
+  <Repository>scottmcc/storage-analyzer:latest</Repository>
+  <Registry>https://hub.docker.com/r/scottmcc/storage-analyzer</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/scottmcc/storage-analyzer/issues</Support>
+  <Project>https://github.com/scottmcc/storage-analyzer</Project>
+  <Category>Tools: Utilities</Category>
+  <Overview>Storage Analyzer is a comprehensive tool for analyzing disk usage, finding duplicate files, and managing storage on unRAID systems. It provides detailed analytics, file type breakdowns, and helps identify space usage patterns.</Overview>
+  <Description>Storage Analyzer provides comprehensive storage analysis for unRAID systems including:
+
+• Disk usage analysis and visualization
+• Duplicate file detection and management
+• File type breakdown and analytics
+• Folder size analysis and usage explorer
+• Media file detection and organization
+• Customizable scan settings and exclusions
+• Multiple theme support (unRAID, Plex, Emby, Jellyfin, Dark, Light, Dark Lime)
+• Real-time scan status and progress tracking
+• Export capabilities for reports and data
+
+Perfect for unRAID users who want to understand their storage usage, find duplicate files, and optimize their media library organization.</Description>
+  <Icon>https://raw.githubusercontent.com/scottmcc/storage-analyzer/main/icon.png</Icon>
+  <WebUI>http://[IP]:[PORT:8080]</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/scottmcc/storage-analyzer/main/unraid-template.xml</TemplateURL>
+  <Config Name="Data Path" Target="/data" Default="/mnt/user" Mode="ro" Type="Path" Display="always" Required="true" Mask="false">Path to scan for files</Config>
+  <Config Name="App Data" Target="/app/data" Default="/mnt/user/appdata/storage-analyzer" Mode="rw" Type="Path" Display="always" Required="true" Mask="false">Application data directory</Config>
+  <Config Name="Database" Target="/app/storage_manager.db" Default="/mnt/user/appdata/storage-analyzer/storage_manager.db" Mode="rw" Type="Path" Display="always" Required="true" Mask="false">Database file location</Config>
+  <Config Name="Port" Target="8080" Default="8080" Mode="tcp" Type="Port" Display="always" Required="true" Mask="false">Web interface port</Config>
+  <Config Name="Scan Time" Target="SCAN_TIME" Default="01:00" Mode="" Type="Variable" Display="always" Required="false" Mask="false">Daily scan time (HH:MM format)</Config>
+  <Config Name="Max Scan Duration" Target="MAX_SCAN_DURATION" Default="6" Mode="" Type="Variable" Display="always" Required="false" Mask="false">Maximum scan duration in hours</Config>
+  <Config Name="Environment" Target="FLASK_ENV" Default="production" Mode="" Type="Variable" Display="always" Required="false" Mask="false">Flask environment (production/development)</Config>
+</Container>

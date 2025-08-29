@@ -9,6 +9,7 @@ services:
     volumes:
       - /data:/data:ro
       - ./app-data:/app/data
+      - ./database:/app/storage_manager.db
     environment:
       - DATA_PATH=/data
       - SCAN_TIME=01:00

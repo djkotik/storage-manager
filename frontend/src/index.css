@@ -616,6 +616,32 @@ select option {
   color: rgb(var(--primary)) !important; /* Green for folder icons */
 }
 
+/* Additional specific overrides for navigation active states to ensure they work properly */
+.theme-plex .bg-blue-100.text-blue-900,
+.theme-plex .dark .bg-blue-900.dark\:text-blue-100 {
+  background-color: rgb(var(--primary)) !important;
+  color: rgb(var(--primary-foreground)) !important;
+}
+
+.theme-dark-lime .bg-blue-100.text-blue-900,
+.theme-dark-lime .dark .bg-blue-900.dark\:text-blue-100 {
+  background-color: rgb(var(--primary)) !important;
+  color: rgb(var(--primary-foreground)) !important;
+}
+
+/* Ensure navigation items in Plex and Dark-lime themes use primary colors */
+.theme-plex .group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md.bg-blue-100.text-blue-900,
+.theme-plex .group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md.dark\:bg-blue-900.dark\:text-blue-100 {
+  background-color: rgb(var(--primary)) !important;
+  color: rgb(var(--primary-foreground)) !important;
+}
+
+.theme-dark-lime .group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md.bg-blue-100.text-blue-900,
+.theme-dark-lime .group.flex.items-center.px-2.py-2.text-sm.font-medium.rounded-md.dark\:bg-blue-900.dark\:text-blue-100 {
+  background-color: rgb(var(--primary)) !important;
+  color: rgb(var(--primary-foreground)) !important;
+}
+
 /* Inactive navigation items - darker text for better readability */
 .theme-unraid .text-gray-600 {
   color: rgb(75 85 99); /* Darker grey */
@@ -798,6 +824,31 @@ select option {
 
 .theme-dark-lime .dark .text-blue-100 {
   color: rgb(var(--primary-foreground));
+}
+
+/* Comprehensive navigation active state overrides for all themes */
+.theme-plex .bg-blue-100,
+.theme-plex .dark .bg-blue-900,
+.theme-plex .bg-blue-900 {
+  background-color: rgb(var(--primary)) !important;
+}
+
+.theme-plex .text-blue-900,
+.theme-plex .dark .text-blue-100,
+.theme-plex .text-blue-100 {
+  color: rgb(var(--primary-foreground)) !important;
+}
+
+.theme-dark-lime .bg-blue-100,
+.theme-dark-lime .dark .bg-blue-900,
+.theme-dark-lime .bg-blue-900 {
+  background-color: rgb(var(--primary)) !important;
+}
+
+.theme-dark-lime .text-blue-900,
+.theme-dark-lime .dark .text-blue-100,
+.theme-dark-lime .text-blue-100 {
+  color: rgb(var(--primary-foreground)) !important;
 }
 
 /* ===== POPUP AND NOTIFICATION THEMING ===== */

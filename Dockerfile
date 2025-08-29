@@ -24,11 +24,18 @@ FROM python:3.11-alpine
 # Add build argument to force rebuild of code layers
 ARG BUILD_DATE=unknown
 
-# Install system dependencies for media processing
-RUN apk add --no-cache \
-    ffmpeg \
-    mediainfo \
-    && rm -rf /var/cache/apk/*
+# Update package index first
+RUN apk update
+
+# Install wget first (needed for health check)
+RUN apk add --no-cache wget
+
+# Install media processing dependencies separately to isolate any issues
+RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache mediainfo
+
+# Clean up package cache
+RUN rm -rf /var/cache/apk/*
 
 # Copy Python dependencies
 COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
