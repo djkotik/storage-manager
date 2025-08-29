@@ -637,6 +637,28 @@ select option {
   color: rgb(var(--primary)) !important; /* Green for folder icons */
 }
 
+/* Theme-aware folder icon colors for Usage Explorer */
+.theme-unraid .text-blue-500,
+.theme-light .text-blue-500,
+.theme-dark .text-blue-500,
+.theme-plex .text-blue-500,
+.theme-emby .text-blue-500,
+.theme-jellyfin .text-blue-500,
+.theme-dark-lime .text-blue-500 {
+  color: rgb(var(--primary)) !important;
+}
+
+/* Specific folder icon overrides for Usage Explorer */
+.theme-unraid .text-blue-500 svg,
+.theme-light .text-blue-500 svg,
+.theme-dark .text-blue-500 svg,
+.theme-plex .text-blue-500 svg,
+.theme-emby .text-blue-500 svg,
+.theme-jellyfin .text-blue-500 svg,
+.theme-dark-lime .text-blue-500 svg {
+  color: rgb(var(--primary)) !important;
+}
+
 /* Additional specific overrides for navigation active states to ensure they work properly */
 .theme-plex .bg-blue-100.text-blue-900,
 .theme-plex .dark .bg-blue-900.dark\:text-blue-100 {
@@ -763,11 +785,24 @@ select option {
   color: rgb(51 65 85) !important; /* Darker grey for better readability */
 }
 
-/* Light theme filetype text - ensure white text for better readability */
+/* Light theme filetype text - ensure dark text for better readability */
 .theme-light .text-gray-900,
 .theme-light .text-gray-700,
 .theme-light .text-gray-600 {
   color: rgb(15 23 42) !important; /* Dark text for better readability */
+}
+
+/* Light theme filetype tag - ensure white text on colored background */
+.theme-light .text-gray-500.bg-gray-100,
+.theme-light .text-gray-400.bg-gray-100 {
+  color: rgb(255 255 255) !important; /* White text for better contrast */
+  background-color: rgb(var(--primary)) !important; /* Use theme primary color */
+}
+
+.theme-light .dark .text-gray-500.bg-gray-700,
+.theme-light .dark .text-gray-400.bg-gray-700 {
+  color: rgb(255 255 255) !important; /* White text for better contrast */
+  background-color: rgb(var(--primary)) !important; /* Use theme primary color */
 }
 
 /* Dark theme specific overrides */
