@@ -369,7 +369,7 @@ const Dashboard: React.FC = () => {
                 {scanStatus.total_size_formatted || '0 B'}
               </p>
               <p className="text-xs text-red-700 dark:text-red-300">
-                Scan ID: {scanStatus.scan_id}
+                Scan ID: {scanStatus.scan_id || 'Unknown'}
               </p>
             </div>
           </div>
@@ -417,7 +417,7 @@ const Dashboard: React.FC = () => {
                 {scanStatus.total_size_formatted || '0 B'}
               </p>
               <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                Scan ID: {scanStatus.scan_id}
+                Scan ID: {scanStatus.scan_id || 'Unknown'}
               </p>
             </div>
           </div>
@@ -437,7 +437,7 @@ const Dashboard: React.FC = () => {
                   Total Storage
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.total_size_formatted}
+                  {analytics.total_size_formatted || '0 B'}
                 </p>
               </div>
             </div>
@@ -453,7 +453,7 @@ const Dashboard: React.FC = () => {
                   Total Files
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.total_files.toLocaleString()}
+                  {(analytics.total_files || 0).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -469,7 +469,7 @@ const Dashboard: React.FC = () => {
                   Directories
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.total_directories.toLocaleString()}
+                  {(analytics.total_directories || 0).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -485,7 +485,7 @@ const Dashboard: React.FC = () => {
                   Duplicate Files
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.duplicate_count.toLocaleString()}
+                  {(analytics.duplicate_count || 0).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -502,7 +502,7 @@ const Dashboard: React.FC = () => {
               Top File Types
             </h3>
             <div className="space-y-3">
-              {analytics.top_extensions.slice(0, 10).map((fileType) => (
+              {(analytics.top_extensions || []).slice(0, 10).map((fileType) => (
                 <div key={fileType.extension} className="flex items-center justify-between">
                   <div className="flex items-center">
                     <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
@@ -512,10 +512,10 @@ const Dashboard: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {fileType.total_size_formatted}
+                      {fileType.total_size_formatted || '0 B'}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {fileType.count.toLocaleString()} files
+                      {(fileType.count || 0).toLocaleString()} files
                     </p>
                   </div>
                 </div>
@@ -557,15 +557,15 @@ const Dashboard: React.FC = () => {
                   <div className="flex items-center">
                     <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {share.name}
+                      {share.name || 'Unknown'}
                     </span>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {share.size_formatted}
+                      {share.size_formatted || '0 B'}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {share.file_count.toLocaleString()} files
+                      {(share.file_count || 0).toLocaleString()} files
                     </p>
                   </div>
                 </div>
@@ -592,16 +592,16 @@ const Dashboard: React.FC = () => {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {file.name}
+                      {file.name || 'Unknown'}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {file.path}
+                      {file.path || 'Unknown path'}
                     </p>
                   </div>
                 </div>
                 <div className="text-right ml-4">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {file.size_formatted}
+                    {file.size_formatted || '0 B'}
                   </p>
                 </div>
               </div>

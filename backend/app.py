@@ -2358,7 +2358,10 @@ def get_analytics_overview():
                 'total_size': 0,
                 'total_size_formatted': '0 B',
                 'top_extensions': [],
-                'media_files': 0
+                'largest_files': [],
+                'duplicate_count': 0,
+                'empty_directories': 0,
+                'hidden_files': 0
             })
         
         # Get total stats from the scan
