@@ -154,25 +154,35 @@ const Files: React.FC = () => {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters and View Controls */}
       <div className="card p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          {/* Search with Filter Button */}
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Search
             </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search files..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+            <div className="flex space-x-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search files..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <button
+                onClick={fetchFiles}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 whitespace-nowrap"
+              >
+                <Filter className="h-4 w-4" />
+              </button>
             </div>
           </div>
           
+          {/* Type Filter */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Type
@@ -188,6 +198,7 @@ const Files: React.FC = () => {
             </select>
           </div>
           
+          {/* Modified Since Filter */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Modified Since
@@ -208,27 +219,15 @@ const Files: React.FC = () => {
             </select>
           </div>
           
-          <div className="flex items-end">
-            <button
-              onClick={fetchFiles}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              <Filter className="h-4 w-4 inline mr-2" />
-              Filter
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* View Mode Controls */}
-      <div className="card p-6">
-        <div className="flex justify-center">
-          <div className="flex items-center space-x-4">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">View Mode:</span>
+          {/* View Mode Controls */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              View Mode
+            </label>
             <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('normal')}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                   viewMode === 'normal'
                     ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
@@ -238,7 +237,7 @@ const Files: React.FC = () => {
               </button>
               <button
                 onClick={() => setViewMode('compact')}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                   viewMode === 'compact'
                     ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
@@ -285,14 +284,20 @@ const Files: React.FC = () => {
               title={`${file.name}\nPath: ${file.path}\nSize: ${file.size_formatted}\nModified: ${formatDate(file.modified_time)}`}
             >
               {/* Hover tooltip */}
-              <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none transition-opacity duration-200 z-10 whitespace-nowrap">
-                <div className="max-w-xs">
-                  <div className="font-semibold">{file.name}</div>
-                  <div className="text-gray-300">{file.path}</div>
-                  <div className="text-gray-300">Size: {file.size_formatted}</div>
-                  <div className="text-gray-300">Modified: {formatDate(file.modified_time)}</div>
+              <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-4 py-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs rounded-lg shadow-xl border border-gray-200 dark:border-gray-600 pointer-events-none transition-opacity duration-200 z-20 max-w-sm">
+                <div className="space-y-2">
+                  <div className="font-semibold text-sm border-b border-gray-200 dark:border-gray-600 pb-1">{file.name}</div>
+                  <div className="text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">Path:</span> {file.path}
+                  </div>
+                  <div className="text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">Size:</span> {file.size_formatted}
+                  </div>
+                  <div className="text-gray-600 dark:text-gray-300">
+                    <span className="font-medium">Modified:</span> {formatDate(file.modified_time)}
+                  </div>
                 </div>
-                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white dark:border-t-gray-800"></div>
               </div>
               
               <div className="flex items-center justify-between mb-3">
