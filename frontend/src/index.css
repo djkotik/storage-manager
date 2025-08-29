@@ -531,6 +531,27 @@ select option {
   background-color: rgb(var(--info));
 }
 
+/* Theme-aware colored dots for file types and folder shares */
+.theme-unraid .bg-blue-500,
+.theme-light .bg-blue-500,
+.theme-dark .bg-blue-500,
+.theme-plex .bg-blue-500,
+.theme-emby .bg-blue-500,
+.theme-jellyfin .bg-blue-500,
+.theme-dark-lime .bg-blue-500 {
+  background-color: rgb(var(--primary));
+}
+
+.theme-unraid .bg-green-500,
+.theme-light .bg-green-500,
+.theme-dark .bg-green-500,
+.theme-plex .bg-green-500,
+.theme-emby .bg-green-500,
+.theme-jellyfin .bg-green-500,
+.theme-dark-lime .bg-green-500 {
+  background-color: rgb(var(--success));
+}
+
 /* Navigation and header styling */
 .theme-unraid .bg-gray-900 {
   background-color: rgb(26 26 26); /* Dark header like unRAID */

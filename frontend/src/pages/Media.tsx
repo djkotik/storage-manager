@@ -23,6 +23,7 @@ const Files: React.FC = () => {
   const [fileType, setFileType] = useState('')
   const [modifiedSince, setModifiedSince] = useState('')
   const [scanStatus, setScanStatus] = useState<any>(null)
+  const [viewMode, setViewMode] = useState<'normal' | 'compact'>('normal')
 
   useEffect(() => {
     fetchFiles()
@@ -219,8 +220,43 @@ const Files: React.FC = () => {
         </div>
       </div>
 
-      {/* Files Grid - Responsive with better screen utilization */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+      {/* View Mode Controls */}
+      <div className="card p-6">
+        <div className="flex justify-center">
+          <div className="flex items-center space-x-4">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">View Mode:</span>
+            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('normal')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  viewMode === 'normal'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Normal
+              </button>
+              <button
+                onClick={() => setViewMode('compact')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  viewMode === 'compact'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Compact
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Files Grid - Responsive with view mode options */}
+      <div className={`grid gap-4 ${
+        viewMode === 'normal' 
+          ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2' 
+          : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+      }`}>
         {loading ? (
           Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="card p-4 animate-pulse">
