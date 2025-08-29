@@ -2379,9 +2379,29 @@ def get_analytics_overview():
             desc(func.sum(FileRecord.size))
         ).limit(10).all()
         
-        # Get media breakdown
-        media_files = MediaFile.query.join(FileRecord, MediaFile.file_id == FileRecord.id).filter(
+        # Get largest files
+        largest_files = FileRecord.query.filter(
+            FileRecord.scan_id == latest_scan.id,
+            FileRecord.is_directory == False
+        ).order_by(FileRecord.size.desc()).limit(5).all()
+        
+        # Get duplicate count
+        duplicate_count = DuplicateFile.query.join(FileRecord, DuplicateFile.file_id == FileRecord.id).filter(
             FileRecord.scan_id == latest_scan.id
+        ).count()
+        
+        # Get empty directories count
+        empty_directories = FileRecord.query.filter(
+            FileRecord.scan_id == latest_scan.id,
+            FileRecord.is_directory == True,
+            FileRecord.size == 0
+        ).count()
+        
+        # Get hidden files count (files starting with .)
+        hidden_files = FileRecord.query.filter(
+            FileRecord.scan_id == latest_scan.id,
+            FileRecord.is_directory == False,
+            FileRecord.name.like('.%')
         ).count()
         
         return jsonify({
@@ -2395,7 +2415,15 @@ def get_analytics_overview():
                 'total_size': ext.total_size,
                 'total_size_formatted': format_size(ext.total_size)
             } for ext in top_extensions],
-            'media_files': media_files
+            'largest_files': [{
+                'name': file.name,
+                'path': file.path,
+                'size': file.size,
+                'size_formatted': format_size(file.size)
+            } for file in largest_files],
+            'duplicate_count': duplicate_count,
+            'empty_directories': empty_directories,
+            'hidden_files': hidden_files
         })
     except Exception as e:
         logger.error(f"Error getting analytics overview: {e}")

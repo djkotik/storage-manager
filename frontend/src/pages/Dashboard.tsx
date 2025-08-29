@@ -40,7 +40,15 @@ interface AnalyticsOverview {
     total_size: number
     total_size_formatted: string
   }>
-  media_files: number
+  largest_files: Array<{
+    name: string
+    path: string
+    size: number
+    size_formatted: string
+  }>
+  duplicate_count: number
+  empty_directories: number
+  hidden_files: number
 }
 
 interface TopShare {
@@ -470,14 +478,14 @@ const Dashboard: React.FC = () => {
           <div className="card p-6">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <Video className="h-8 w-8 text-red-600" />
+                <FileText className="h-8 w-8 text-orange-600" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  Media Files
+                  Duplicate Files
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.media_files.toLocaleString()}
+                  {analytics.duplicate_count.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -568,6 +576,39 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Largest Files */}
+      {analytics && analytics.largest_files && analytics.largest_files.length > 0 && (
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Largest Files
+          </h3>
+          <div className="space-y-3">
+            {analytics.largest_files.slice(0, 5).map((file, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="flex items-center flex-1 min-w-0">
+                  <div className="flex-shrink-0 mr-3">
+                    <FileText className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {file.name}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {file.path}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right ml-4">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {file.size_formatted}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* System Status */}
       <div className="card p-6">
