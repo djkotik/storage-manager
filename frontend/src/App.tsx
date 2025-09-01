@@ -7,6 +7,7 @@ import Media from './pages/Media'
 import Analytics from './pages/Analytics'
 import Settings from './pages/Settings'
 import Duplicates from './pages/Duplicates'
+import LargestFiles from './pages/LargestFiles'
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/media" element={<Media />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/largest-files" element={<LargestFiles />} />
           <Route path="/duplicates" element={<Duplicates />} />
         </Routes>
       </Layout>

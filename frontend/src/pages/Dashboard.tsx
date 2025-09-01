@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Play, Square, HardDrive, FolderOpen, FileText, Video, RefreshCw } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import axios from 'axios'
@@ -428,67 +429,75 @@ const Dashboard: React.FC = () => {
       {analytics && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="card p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <HardDrive className="h-8 w-8 text-blue-600" />
+            <Link to="/files" className="block">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <HardDrive className="h-8 w-8 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Total Storage
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                    {analytics.total_size_formatted || '0 B'}
+                  </p>
+                </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  Total Storage
-                </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {analytics.total_size_formatted || '0 B'}
-                </p>
-              </div>
-            </div>
+            </Link>
           </div>
 
           <div className="card p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <FileText className="h-8 w-8 text-green-600" />
+            <Link to="/files" className="block">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <FileText className="h-8 w-8 text-green-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Total Files
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                    {(analytics.total_files || 0).toLocaleString()}
+                  </p>
+                </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  Total Files
-                </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {(analytics.total_files || 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
+            </Link>
           </div>
 
           <div className="card p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <FolderOpen className="h-8 w-8 text-purple-600" />
+            <Link to="/files" className="block">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <FolderOpen className="h-8 w-8 text-purple-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Directories
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                    {(analytics.total_directories || 0).toLocaleString()}
+                  </p>
+                </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  Directories
-                </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {(analytics.total_directories || 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
+            </Link>
           </div>
 
           <div className="card p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <FileText className="h-8 w-8 text-orange-600" />
+            <Link to="/duplicates" className="block">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <FileText className="h-8 w-8 text-orange-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                    Duplicate Files
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                    {(analytics.duplicate_count || 0).toLocaleString()}
+                  </p>
+                </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  Duplicate Files
-                </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {(analytics.duplicate_count || 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
+            </Link>
           </div>
         </div>
       )}
@@ -580,31 +589,45 @@ const Dashboard: React.FC = () => {
       {/* Largest Files */}
       {analytics && analytics.largest_files && analytics.largest_files.length > 0 && (
         <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Largest Files
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Largest Files
+            </h3>
+            <Link 
+              to="/largest-files" 
+              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+            >
+              View All →
+            </Link>
+          </div>
           <div className="space-y-3">
             {analytics.largest_files.slice(0, 5).map((file, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="flex items-center flex-1 min-w-0">
-                  <div className="flex-shrink-0 mr-3">
-                    <FileText className="h-5 w-5 text-blue-500" />
+              <Link 
+                key={index} 
+                to="/largest-files" 
+                className="block"
+              >
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <div className="flex items-center flex-1 min-w-0">
+                    <div className="flex-shrink-0 mr-3">
+                      <FileText className="h-5 w-5 text-blue-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {file.name || 'Unknown'}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {file.path || 'Unknown path'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {file.name || 'Unknown'}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {file.path || 'Unknown path'}
+                  <div className="text-right ml-4">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {file.size_formatted || '0 B'}
                     </p>
                   </div>
                 </div>
-                <div className="text-right ml-4">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {file.size_formatted || '0 B'}
-                  </p>
-                </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

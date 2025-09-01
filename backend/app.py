@@ -1784,6 +1784,8 @@ def get_files():
         search = request.args.get('search', '')
         file_type = request.args.get('type', '')
         modified_since = request.args.get('modified_since', '')
+        sort_by = request.args.get('sort', 'name')
+        sort_order = request.args.get('order', 'asc')
         
         # Always get the most recent scan regardless of status
         latest_scan = db.session.query(ScanRecord).order_by(ScanRecord.start_time.desc()).first()
@@ -1815,7 +1817,8 @@ def get_files():
         
         # Apply modified since filter
         if modified_since:
-            now = datetime.utcnow()
+            # Use local time instead of UTC to match user expectations
+            now = datetime.now()
             if modified_since == 'today':
                 start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
             elif modified_since == 'week':
@@ -1843,8 +1846,22 @@ def get_files():
             if modified_since not in ['last_year', 'older_1_year', 'older_5_years']:
                 query = query.filter(FileRecord.modified_time >= start_date)
         
-        # Order by name
-        query = query.order_by(FileRecord.name)
+        # Apply sorting
+        if sort_by == 'size':
+            if sort_order == 'desc':
+                query = query.order_by(FileRecord.size.desc())
+            else:
+                query = query.order_by(FileRecord.size.asc())
+        elif sort_by == 'modified_time':
+            if sort_order == 'desc':
+                query = query.order_by(FileRecord.modified_time.desc())
+            else:
+                query = query.order_by(FileRecord.modified_time.asc())
+        else:  # Default to name
+            if sort_order == 'desc':
+                query = query.order_by(FileRecord.name.desc())
+            else:
+                query = query.order_by(FileRecord.name.asc())
         
         # Paginate
         pagination = query.paginate(
@@ -1860,8 +1877,10 @@ def get_files():
                 'size': file_record.size,
                 'size_formatted': format_size(file_record.size),
                 'is_directory': file_record.is_directory,
+                'type': 'directory' if file_record.is_directory else 'file',
                 'extension': file_record.extension or '',
                 'modified_time': file_record.modified_time.isoformat() if file_record.modified_time else None,
+                'modified': file_record.modified_time.isoformat() if file_record.modified_time else None,
                 'parent_path': file_record.parent_path
             })
         

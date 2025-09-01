@@ -359,4 +359,4 @@ const Files: React.FC = () => {
   )
 }
 
-export default Files 
+export default Media 
