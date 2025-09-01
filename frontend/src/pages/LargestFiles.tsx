@@ -85,6 +85,7 @@ const LargestFiles: React.FC<LargestFilesProps> = () => {
 
   const handleFileClick = (file: FileItem) => {
     // Navigate to Usage Explorer and expand to the folder containing this file
+    console.log('Navigating to Usage Explorer with path:', file.parent_path);
     navigate(`/files?expand=${encodeURIComponent(file.parent_path)}`);
   };
 

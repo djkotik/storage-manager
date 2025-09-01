@@ -1870,6 +1870,16 @@ def get_files():
         
         files = []
         for file_record in pagination.items:
+            # Try to get actual file modification time from filesystem if database field is None
+            modified_time = file_record.modified_time
+            if not modified_time and not file_record.is_directory:
+                try:
+                    import os
+                    if os.path.exists(file_record.path):
+                        modified_time = datetime.fromtimestamp(os.path.getmtime(file_record.path))
+                except:
+                    pass
+            
             files.append({
                 'id': file_record.id,
                 'path': file_record.path,
@@ -1879,8 +1889,8 @@ def get_files():
                 'is_directory': file_record.is_directory,
                 'type': 'directory' if file_record.is_directory else 'file',
                 'extension': file_record.extension or '',
-                'modified_time': file_record.modified_time.isoformat() if file_record.modified_time else None,
-                'modified': file_record.modified_time.isoformat() if file_record.modified_time else None,
+                'modified_time': modified_time.isoformat() if modified_time else None,
+                'modified': modified_time.isoformat() if modified_time else None,
                 'parent_path': file_record.parent_path
             })
         

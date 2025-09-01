@@ -123,14 +123,26 @@ const Files: React.FC = () => {
 
   const autoExpandPath = async (targetPath: string) => {
     try {
+      console.log('Auto-expanding path:', targetPath)
+      
       // Find the target path in the file tree and expand it
       const expandPathRecursively = async (items: FileItem[], currentPath: string = ''): Promise<boolean> => {
         for (const item of items) {
           const itemPath = currentPath ? `${currentPath}/${item.name}` : item.name
           
-          if (itemPath === targetPath || item.path === targetPath) {
+          console.log('Checking item:', item.name, 'path:', itemPath, 'target:', targetPath)
+          
+          // Check multiple path formats for better matching
+          if (itemPath === targetPath || 
+              item.path === targetPath || 
+              item.path.endsWith(targetPath) ||
+              targetPath.endsWith(item.path)) {
+            
+            console.log('Found matching path:', item.path)
+            
             // Found the target path, expand it
             if (item.is_directory && !expandedFolders.has(item.id.toString())) {
+              console.log('Expanding directory:', item.name)
               await fetchDirectoryChildren(item.id, item.path)
               setExpandedFolders(prev => new Set(prev).add(item.id.toString()))
             }
@@ -142,6 +154,7 @@ const Files: React.FC = () => {
             if (await expandPathRecursively(item.children, itemPath)) {
               // If found in children, expand the parent
               if (!expandedFolders.has(item.id.toString())) {
+                console.log('Expanding parent directory:', item.name)
                 await fetchDirectoryChildren(item.id, item.path)
                 setExpandedFolders(prev => new Set(prev).add(item.id.toString()))
               }
@@ -152,9 +165,53 @@ const Files: React.FC = () => {
         return false
       }
       
-      await expandPathRecursively(fileTree)
+      const result = await expandPathRecursively(fileTree)
+      if (!result) {
+        console.log('Path not found in tree, attempting alternative search')
+        // Try to find by partial path matching
+        await findAndExpandByPartialPath(targetPath)
+      }
     } catch (error) {
       console.error('Error auto-expanding path:', error)
+    }
+  }
+
+  const findAndExpandByPartialPath = async (targetPath: string) => {
+    try {
+      // Extract the parent directory path from the target path
+      const parentDir = targetPath.split('/').slice(0, -1).join('/')
+      console.log('Looking for parent directory:', parentDir)
+      
+      // Search for directories that contain the parent path
+      const searchRecursively = async (items: FileItem[]): Promise<boolean> => {
+        for (const item of items) {
+          if (item.is_directory) {
+            if (item.path === parentDir || item.path.endsWith(parentDir) || parentDir.endsWith(item.path)) {
+              console.log('Found parent directory by partial match:', item.path)
+              if (!expandedFolders.has(item.id.toString())) {
+                await fetchDirectoryChildren(item.id, item.path)
+                setExpandedFolders(prev => new Set(prev).add(item.id.toString()))
+              }
+              return true
+            }
+            
+            if (item.children) {
+              if (await searchRecursively(item.children)) {
+                if (!expandedFolders.has(item.id.toString())) {
+                  await fetchDirectoryChildren(item.id, item.path)
+                  setExpandedFolders(prev => new Set(prev).add(item.id.toString()))
+                }
+                return true
+              }
+            }
+          }
+        }
+        return false
+      }
+      
+      await searchRecursively(fileTree)
+    } catch (error) {
+      console.error('Error in partial path search:', error)
     }
   }
 
