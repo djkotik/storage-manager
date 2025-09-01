@@ -14,7 +14,7 @@ interface FileRecord {
   parent_path: string
 }
 
-const Files: React.FC = () => {
+const Media: React.FC = () => {
   const [files, setFiles] = useState<FileRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
