@@ -90,9 +90,15 @@ const LargestFiles: React.FC<LargestFilesProps> = () => {
 
   const totalPages = Math.ceil(totalFiles / pageSize);
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Unknown';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleDateString();
+    } catch (error) {
+      return 'Invalid Date';
+    }
   };
 
   const getFileIcon = (type: string) => {

@@ -1,0 +1,13 @@
+[1mdiff --git a/frontend/src/pages/Media.tsx b/frontend/src/pages/Media.tsx[m
+[1mindex 66289f3..eada065 100644[m
+[1m--- a/frontend/src/pages/Media.tsx[m
+[1m+++ b/frontend/src/pages/Media.tsx[m
+[36m@@ -14,7 +14,7 @@[m [minterface FileRecord {[m
+   parent_path: string[m
+ }[m
+ [m
+[31m-const Files: React.FC = () => {[m
+[32m+[m[32mconst Media: React.FC = () => {[m
+   const [files, setFiles] = useState<FileRecord[]>([])[m
+   const [loading, setLoading] = useState(true)[m
+   const [currentPage, setCurrentPage] = useState(1)[m

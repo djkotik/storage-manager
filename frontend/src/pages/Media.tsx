@@ -121,8 +121,15 @@ const Media: React.FC = () => {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString()
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Unknown';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleDateString();
+    } catch (error) {
+      return 'Invalid Date';
+    }
   }
 
   return (

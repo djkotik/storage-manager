@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ChevronRight, ChevronDown, Folder, File, HardDrive, Trash2, FileText, Image, Film, Music, Archive, Code } from 'lucide-react'
 import axios from 'axios'
 
@@ -89,6 +90,7 @@ const getFileIcon = (filename: string) => {
 }
 
 const Files: React.FC = () => {
+  const location = useLocation()
   const [fileTree, setFileTree] = useState<FileItem[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -107,6 +109,54 @@ const Files: React.FC = () => {
     const interval = setInterval(fetchScanStatus, 5000)
     return () => clearInterval(interval)
   }, [])
+
+  // Handle expand parameter from URL
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search)
+    const expandPath = searchParams.get('expand')
+    
+    if (expandPath && fileTree.length > 0) {
+      // Auto-expand the folder path
+      autoExpandPath(expandPath)
+    }
+  }, [location.search, fileTree])
+
+  const autoExpandPath = async (targetPath: string) => {
+    try {
+      // Find the target path in the file tree and expand it
+      const expandPathRecursively = async (items: FileItem[], currentPath: string = ''): Promise<boolean> => {
+        for (const item of items) {
+          const itemPath = currentPath ? `${currentPath}/${item.name}` : item.name
+          
+          if (itemPath === targetPath || item.path === targetPath) {
+            // Found the target path, expand it
+            if (item.is_directory && !expandedFolders.has(item.id.toString())) {
+              await fetchDirectoryChildren(item.id, item.path)
+              setExpandedFolders(prev => new Set(prev).add(item.id.toString()))
+            }
+            return true
+          }
+          
+          // Recursively search in children
+          if (item.children && item.is_directory) {
+            if (await expandPathRecursively(item.children, itemPath)) {
+              // If found in children, expand the parent
+              if (!expandedFolders.has(item.id.toString())) {
+                await fetchDirectoryChildren(item.id, item.path)
+                setExpandedFolders(prev => new Set(prev).add(item.id.toString()))
+              }
+              return true
+            }
+          }
+        }
+        return false
+      }
+      
+      await expandPathRecursively(fileTree)
+    } catch (error) {
+      console.error('Error auto-expanding path:', error)
+    }
+  }
 
   const fetchScanStatus = async () => {
     try {
