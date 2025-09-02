@@ -145,7 +145,7 @@ const Files: React.FC = () => {
             normalizedItemDbPath,
             normalizedTargetPath,
             itemPath,
-            itemPath: item.path,
+            dbPath: item.path,
             targetPath
           })
           
@@ -213,7 +213,7 @@ const Files: React.FC = () => {
             console.log('Partial path comparison:', {
               normalizedItemPath,
               normalizedParentDir,
-              itemPath: item.path,
+              dbPath: item.path,
               parentDir
             })
             
