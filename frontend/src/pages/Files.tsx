@@ -116,6 +116,8 @@ const Files: React.FC = () => {
     const expandPath = searchParams.get('expand')
     
     if (expandPath && fileTree.length > 0) {
+      console.log('URL expand parameter detected:', expandPath)
+      console.log('Current file tree:', fileTree)
       // Auto-expand the folder path
       autoExpandPath(expandPath)
     }
@@ -132,11 +134,28 @@ const Files: React.FC = () => {
           
           console.log('Checking item:', item.name, 'path:', itemPath, 'target:', targetPath)
           
+          // Normalize paths for comparison (remove leading/trailing slashes and normalize separators)
+          const normalizePath = (path: string) => path.replace(/^\/+|\/+$/g, '').replace(/\\/g, '/')
+          const normalizedItemPath = normalizePath(itemPath)
+          const normalizedItemDbPath = normalizePath(item.path)
+          const normalizedTargetPath = normalizePath(targetPath)
+          
+          console.log('Path comparison:', {
+            normalizedItemPath,
+            normalizedItemDbPath,
+            normalizedTargetPath,
+            itemPath,
+            itemPath: item.path,
+            targetPath
+          })
+          
           // Check multiple path formats for better matching
-          if (itemPath === targetPath || 
-              item.path === targetPath || 
-              item.path.endsWith(targetPath) ||
-              targetPath.endsWith(item.path)) {
+          if (normalizedItemPath === normalizedTargetPath || 
+              normalizedItemDbPath === normalizedTargetPath ||
+              normalizedItemPath.endsWith(normalizedTargetPath) ||
+              normalizedItemDbPath.endsWith(normalizedTargetPath) ||
+              normalizedTargetPath.endsWith(normalizedItemPath) ||
+              normalizedTargetPath.endsWith(normalizedItemDbPath)) {
             
             console.log('Found matching path:', item.path)
             
@@ -186,7 +205,21 @@ const Files: React.FC = () => {
       const searchRecursively = async (items: FileItem[]): Promise<boolean> => {
         for (const item of items) {
           if (item.is_directory) {
-            if (item.path === parentDir || item.path.endsWith(parentDir) || parentDir.endsWith(item.path)) {
+            // Normalize paths for comparison
+            const normalizePath = (path: string) => path.replace(/^\/+|\/+$/g, '').replace(/\\/g, '/')
+            const normalizedItemPath = normalizePath(item.path)
+            const normalizedParentDir = normalizePath(parentDir)
+            
+            console.log('Partial path comparison:', {
+              normalizedItemPath,
+              normalizedParentDir,
+              itemPath: item.path,
+              parentDir
+            })
+            
+            if (normalizedItemPath === normalizedParentDir || 
+                normalizedItemPath.endsWith(normalizedParentDir) || 
+                normalizedParentDir.endsWith(normalizedItemPath)) {
               console.log('Found parent directory by partial match:', item.path)
               if (!expandedFolders.has(item.id.toString())) {
                 await fetchDirectoryChildren(item.id, item.path)
@@ -284,13 +317,13 @@ const Files: React.FC = () => {
   }
 
   const toggleFolder = async (item: FileItem) => {
-    const isExpanded = expandedFolders.has(item.path)
+    const isExpanded = expandedFolders.has(item.id.toString())
     const newExpanded = new Set(expandedFolders)
     
     if (isExpanded) {
-      newExpanded.delete(item.path)
+      newExpanded.delete(item.id.toString())
     } else {
-      newExpanded.add(item.path)
+      newExpanded.add(item.id.toString())
       // Fetch children if not already loaded
       if (!item.children || item.children.length === 0) {
         await fetchDirectoryChildren(item.id, item.path)
@@ -337,7 +370,7 @@ const Files: React.FC = () => {
   }
 
   const renderFileItem = (item: FileItem, level: number = 0) => {
-    const isExpanded = expandedFolders.has(item.path)
+    const isExpanded = expandedFolders.has(item.id.toString())
     const hasChildren = item.children && item.children.length > 0
     const isLoading = loadingChildren.has(item.id)
 

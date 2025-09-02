@@ -1831,20 +1831,43 @@ def get_files():
                 start_date = now - timedelta(days=730)
                 end_date = now - timedelta(days=365)
                 query = query.filter(
-                    FileRecord.modified_time >= start_date,
-                    FileRecord.modified_time <= end_date
+                    db.or_(
+                        FileRecord.modified_time >= start_date,
+                        FileRecord.modified_time.is_(None)  # Include files with unknown modification time
+                    )
+                )
+                query = query.filter(
+                    db.or_(
+                        FileRecord.modified_time <= end_date,
+                        FileRecord.modified_time.is_(None)  # Include files with unknown modification time
+                    )
                 )
             elif modified_since == 'older_1_year':
                 start_date = now - timedelta(days=365)
-                query = query.filter(FileRecord.modified_time < start_date)
+                query = query.filter(
+                    db.or_(
+                        FileRecord.modified_time < start_date,
+                        FileRecord.modified_time.is_(None)  # Include files with unknown modification time
+                    )
+                )
             elif modified_since == 'older_5_years':
                 start_date = now - timedelta(days=1825)
-                query = query.filter(FileRecord.modified_time < start_date)
+                query = query.filter(
+                    db.or_(
+                        FileRecord.modified_time < start_date,
+                        FileRecord.modified_time.is_(None)  # Include files with unknown modification time
+                    )
+                )
             else:
                 start_date = now - timedelta(days=365)
             
             if modified_since not in ['last_year', 'older_1_year', 'older_5_years']:
-                query = query.filter(FileRecord.modified_time >= start_date)
+                query = query.filter(
+                    db.or_(
+                        FileRecord.modified_time >= start_date,
+                        FileRecord.modified_time.is_(None)  # Include files with unknown modification time
+                    )
+                )
         
         # Apply sorting
         if sort_by == 'size':
