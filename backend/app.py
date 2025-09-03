@@ -2268,7 +2268,7 @@ def get_directory_children(directory_id):
         # Get the limit from settings (default 100)
         max_items = int(get_setting('max_items_per_folder', '100'))
         
-        # Get all direct children (both files and directories)
+        # Get all direct children (both files and directories) - no limit here
         children = db.session.query(
             FileRecord.name,
             FileRecord.path,
@@ -2280,7 +2280,7 @@ def get_directory_children(directory_id):
         ).filter(
             FileRecord.parent_path == directory.path,
             FileRecord.scan_id == latest_scan.id
-        ).order_by(FileRecord.size.desc()).limit(max_items).all()
+        ).all()
         
         result = []
         for child in children:
@@ -2336,8 +2336,9 @@ def get_directory_children(directory_id):
                     'is_directory': False
                 })
         
-        # Sort by total size (directories) or file size (files)
+        # Sort by total size (directories) or file size (files), then limit to top items
         result.sort(key=lambda x: x['size'], reverse=True)
+        result = result[:max_items]  # Now limit to top items after sorting by actual total sizes
         
         return jsonify({'children': result})
     except Exception as e:
