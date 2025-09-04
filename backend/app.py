@@ -924,18 +924,19 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
     Pre-calculate the top N largest children for each directory during scan.
     This makes the Usage Explorer instant to load.
     """
-    logger.info(f"=== DIRECTORY CHILDREN CALCULATION START ===")
+    logger.info(f"=== DIRECTORY CHILDREN CALCULATION START === {datetime.now()}")
     logger.info(f"Scan ID: {scan_id}")
     logger.info(f"Max items per folder: {max_items_per_folder}")
     
     try:
         # Clear existing directory children for this scan
-        logger.info("Clearing existing directory children...")
+        logger.info(f"Clearing existing directory children... {datetime.now()}")
         DirectoryChildren.query.filter_by(scan_id=scan_id).delete()
         db.session.commit()
-        logger.info("Existing directory children cleared")
+        logger.info(f"Existing directory children cleared {datetime.now()}")
         
         # Get all directories that have children
+        logger.info(f"Fetching directories with children... {datetime.now()}")
         directories_with_children = db.session.query(
             FileRecord.path.distinct().label('parent_path')
         ).join(
@@ -949,14 +950,16 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
             FileRecord.is_directory == True
         ).all()
         
-        logger.info(f"Found {len(directories_with_children)} directories with children to process")
+        logger.info(f"Found {len(directories_with_children)} directories with children to process {datetime.now()}")
         
         processed_count = 0
-        for parent_dir in directories_with_children:
+        for i, parent_dir in enumerate(directories_with_children):
             parent_path = parent_dir.parent_path
+            logger.info(f"Processing parent directory {i+1}/{len(directories_with_children)}: {parent_path} {datetime.now()}")
             
             try:
                 # Get all direct children (files and directories)
+                logger.info(f"  Querying children for {parent_path}... {datetime.now()}")
                 children = db.session.query(
                     FileRecord.id,
                     FileRecord.name,
@@ -969,11 +972,13 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
                     FileRecord.parent_path == parent_path,
                     FileRecord.scan_id == scan_id
                 ).all()
+                logger.info(f"  Found {len(children)} children for {parent_path} {datetime.now()}")
                 
                 if not children:
                     continue
                 
                 # Calculate sizes and create items list
+                logger.info(f"  Processing {len(children)} children for {parent_path}... {datetime.now()}")
                 items = []
                 
                 for child in children:
@@ -1033,10 +1038,12 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
                         })
                 
                 # Sort by size and take top N
+                logger.info(f"  Sorting and limiting to top {max_items_per_folder} for {parent_path}... {datetime.now()}")
                 items.sort(key=lambda x: x['size'], reverse=True)
                 top_items = items[:max_items_per_folder]
                 
                 # Store in database
+                logger.info(f"  Inserting {len(top_items)} children for {parent_path} into DB... {datetime.now()}")
                 for sort_order, item in enumerate(top_items, 1):
                     dir_child = DirectoryChildren(
                         parent_path=parent_path,
@@ -1066,10 +1073,10 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
                 continue
         
         # Final commit
-        logger.info("Committing final directory children calculations...")
+        logger.info(f"Committing final directory children calculations... {datetime.now()}")
         db.session.commit()
-        logger.info(f"Directory children calculated and stored for scan {scan_id}: {processed_count} directories processed")
-        logger.info(f"=== DIRECTORY CHILDREN CALCULATION COMPLETE ===")
+        logger.info(f"Directory children calculated and stored for scan {scan_id}: {processed_count} directories processed {datetime.now()}")
+        logger.info(f"=== DIRECTORY CHILDREN CALCULATION COMPLETE === {datetime.now()}")
         
     except Exception as e:
         logger.error(f"Error in calculate_directory_children_during_scan: {e}")
@@ -2451,6 +2458,7 @@ def get_directory_children(directory_id):
         max_items = int(get_setting('max_items_per_folder', '100'))
         
         # Try to get pre-calculated directory children first (fast path)
+        logger.info(f"Checking for pre-calculated children for {directory.path}... {datetime.now()}")
         pre_calculated_children = DirectoryChildren.query.filter(
             DirectoryChildren.parent_path == directory.path,
             DirectoryChildren.scan_id == latest_scan.id
@@ -2458,6 +2466,7 @@ def get_directory_children(directory_id):
         
         if pre_calculated_children:
             # Use pre-calculated data for instant response
+            logger.info(f"Found {len(pre_calculated_children)} pre-calculated children for {directory.path} - using fast path {datetime.now()}")
             result = []
             for child in pre_calculated_children:
                 if child.is_directory:
@@ -2488,7 +2497,7 @@ def get_directory_children(directory_id):
             return jsonify({'children': result})
         
         # Fallback to on-demand calculation if pre-calculated data not available
-        logger.info(f"No pre-calculated data found for {directory.path}, calculating on-demand...")
+        logger.info(f"No pre-calculated data found for {directory.path}, calculating on-demand... {datetime.now()}")
         
         # Get a larger sample of files to ensure we don't miss any that should be in top N
         file_sample_size = max_items * 2  # Get 2x the limit to be safe
