@@ -23,6 +23,7 @@ const Settings: React.FC = () => {
   const [scanTime, setScanTime] = useState('01:00')
   const [maxScanDuration, setMaxScanDuration] = useState(6)
   const [maxItemsPerFolder, setMaxItemsPerFolder] = useState(100)
+  const [version, setVersion] = useState('')
 
   const [skipAppdata, setSkipAppdata] = useState(true)
   const [skipBackupShares, setSkipBackupShares] = useState(true)
@@ -30,6 +31,7 @@ const Settings: React.FC = () => {
 
   useEffect(() => {
     fetchSettings()
+    fetchVersion()
   }, [])
 
   const fetchSettings = async () => {
@@ -48,6 +50,16 @@ const Settings: React.FC = () => {
       console.error('Error fetching settings:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchVersion = async () => {
+    try {
+      const response = await axios.get('/api/version')
+      setVersion(response.data.version)
+    } catch (error) {
+      console.error('Error fetching version:', error)
+      setVersion('Unknown')
     }
   }
 
@@ -318,7 +330,7 @@ const Settings: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400">Application Version</p>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">1.0.0</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">{version}</p>
           </div>
           
           <div>
