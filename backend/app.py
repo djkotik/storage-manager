@@ -2265,15 +2265,14 @@ def get_directory_children(directory_id):
         
         logger.info(f"Getting children for directory {directory.path} using scan ID {latest_scan.id}")
         
-        # Get the limit from settings (default 100)
         max_items = int(get_setting('max_items_per_folder', '100'))
         
-        # Strategy: Get the largest items efficiently by using a UNION of:
-        # 1. Top N largest files (by direct size)
-        # 2. Top N largest directories (by FolderInfo total_size)
-        # Then sort and take the top N overall
+        # Strategy: Get the true top N largest items by using a more intelligent approach
+        # We'll get a larger sample from each category to ensure we don't miss items
+        # that should be in the overall top N
         
-        # Get top N largest files
+        # Get a larger sample of files to ensure we don't miss any that should be in top N
+        file_sample_size = max_items * 2  # Get 2x the limit to be safe
         largest_files = db.session.query(
             FileRecord.name,
             FileRecord.path,
@@ -2281,26 +2280,22 @@ def get_directory_children(directory_id):
             FileRecord.is_directory,
             FileRecord.size,
             FileRecord.extension,
-            FileRecord.modified_time,
-            literal(False).label('is_from_folder_info'),
-            literal(0).label('file_count'),
-            literal(0).label('directory_count')
+            FileRecord.modified_time
         ).filter(
             FileRecord.parent_path == directory.path,
             FileRecord.scan_id == latest_scan.id,
             FileRecord.is_directory == False
-        ).order_by(FileRecord.size.desc()).limit(max_items).all()
+        ).order_by(FileRecord.size.desc()).limit(file_sample_size).all()
         
-        # Get top N largest directories using FolderInfo (pre-calculated totals)
+        # Get a larger sample of directories using FolderInfo (pre-calculated totals)
+        dir_sample_size = max_items * 2  # Get 2x the limit to be safe
         largest_directories = db.session.query(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id,
             FileRecord.is_directory,
             FileRecord.size,
-            literal('').label('extension'),
-            literal(None).label('modified_time'),
-            literal(True).label('is_from_folder_info'),
+            FolderInfo.total_size,
             FolderInfo.file_count,
             FolderInfo.directory_count
         ).join(
@@ -2314,7 +2309,7 @@ def get_directory_children(directory_id):
             FileRecord.scan_id == latest_scan.id,
             FileRecord.is_directory == True,
             FolderInfo.total_size > 0
-        ).order_by(FolderInfo.total_size.desc()).limit(max_items).all()
+        ).order_by(FolderInfo.total_size.desc()).limit(dir_sample_size).all()
         
         # Combine and sort by actual size
         result = []
@@ -2334,24 +2329,17 @@ def get_directory_children(directory_id):
         
         # Process directories (use FolderInfo total_size)
         for dir_record in largest_directories:
-            # Get the actual total size from FolderInfo
-            folder_info = FolderInfo.query.filter(
-                FolderInfo.path == dir_record.path,
-                FolderInfo.scan_id == latest_scan.id
-            ).first()
-            
-            if folder_info and folder_info.total_size > 0:
-                result.append({
-                    'id': dir_record.id,
-                    'name': dir_record.name,
-                    'path': dir_record.path,
-                    'size': folder_info.total_size,
-                    'size_formatted': format_size(folder_info.total_size),
-                    'file_count': folder_info.file_count,
-                    'directory_count': folder_info.directory_count,
-                    'is_directory': True,
-                    'children': []
-                })
+            result.append({
+                'id': dir_record.id,
+                'name': dir_record.name,
+                'path': dir_record.path,
+                'size': dir_record.total_size,
+                'size_formatted': format_size(dir_record.total_size),
+                'file_count': dir_record.file_count,
+                'directory_count': dir_record.directory_count,
+                'is_directory': True,
+                'children': []
+            })
         
         # Sort by size and take top N
         result.sort(key=lambda x: x['size'], reverse=True)
