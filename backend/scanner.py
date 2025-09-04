@@ -1028,6 +1028,20 @@ class FileScanner:
                 # Continue with the scan even if folder totals fail
                 logger.warning("Continuing scan without folder totals...")
             
+            # Calculate directory children for instant Usage Explorer loading
+            logger.info("Calculating directory children...")
+            try:
+                from app import calculate_directory_children_during_scan
+                max_items = int(self.get_setting('max_items_per_folder', '100'))
+                calculate_directory_children_during_scan(self.current_scan_id, max_items)
+                logger.info("Directory children calculated successfully")
+            except Exception as e:
+                logger.error(f"Error calculating directory children: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error details: {str(e)}")
+                # Continue with the scan even if directory children fail
+                logger.warning("Continuing scan without directory children calculation...")
+            
             # Detect duplicates
             logger.info("Starting duplicate detection...")
             try:

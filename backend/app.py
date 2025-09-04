@@ -383,6 +383,32 @@ class FolderInfo(db.Model):
         db.Index('idx_folder_depth', 'depth'),
     )
 
+class DirectoryChildren(db.Model):
+    """Model for storing pre-calculated top N largest children for each directory"""
+    __tablename__ = 'directory_children'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    parent_path = db.Column(db.String(2000), nullable=False)
+    child_path = db.Column(db.String(2000), nullable=False)
+    child_name = db.Column(db.String(500), nullable=False)
+    child_id = db.Column(db.Integer, nullable=False)
+    is_directory = db.Column(db.Boolean, nullable=False)
+    size = db.Column(db.Integer, nullable=False)  # Total size for directories, direct size for files
+    file_count = db.Column(db.Integer, default=0)  # For directories only
+    directory_count = db.Column(db.Integer, default=0)  # For directories only
+    extension = db.Column(db.String(50))  # For files only
+    modified_time = db.Column(db.DateTime)  # For files only
+    sort_order = db.Column(db.Integer, nullable=False)  # 1 = largest, 2 = second largest, etc.
+    scan_id = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Indexes for performance
+    __table_args__ = (
+        db.Index('idx_dir_children_parent', 'parent_path'),
+        db.Index('idx_dir_children_scan', 'scan_id'),
+        db.Index('idx_dir_children_sort', 'parent_path', 'sort_order'),
+    )
+
 # Utility functions (moved before initialization)
 def format_size(size_bytes):
     """Convert bytes to human readable format"""
@@ -890,6 +916,163 @@ def calculate_folder_totals_during_scan(data_path, scan_id):
         logger.error(f"Error calculating folder totals: {e}")
         logger.error(f"Error type: {type(e).__name__}")
         logger.error(f"Error details: {str(e)}")
+        db.session.rollback()
+        raise
+
+def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
+    """
+    Pre-calculate the top N largest children for each directory during scan.
+    This makes the Usage Explorer instant to load.
+    """
+    logger.info(f"=== DIRECTORY CHILDREN CALCULATION START ===")
+    logger.info(f"Scan ID: {scan_id}")
+    logger.info(f"Max items per folder: {max_items_per_folder}")
+    
+    try:
+        # Clear existing directory children for this scan
+        logger.info("Clearing existing directory children...")
+        DirectoryChildren.query.filter_by(scan_id=scan_id).delete()
+        db.session.commit()
+        logger.info("Existing directory children cleared")
+        
+        # Get all directories that have children
+        directories_with_children = db.session.query(
+            FileRecord.path.distinct().label('parent_path')
+        ).join(
+            FileRecord, 
+            and_(
+                FileRecord.parent_path == FileRecord.path,
+                FileRecord.scan_id == scan_id
+            )
+        ).filter(
+            FileRecord.scan_id == scan_id,
+            FileRecord.is_directory == True
+        ).all()
+        
+        logger.info(f"Found {len(directories_with_children)} directories with children to process")
+        
+        processed_count = 0
+        for parent_dir in directories_with_children:
+            parent_path = parent_dir.parent_path
+            
+            try:
+                # Get all direct children (files and directories)
+                children = db.session.query(
+                    FileRecord.id,
+                    FileRecord.name,
+                    FileRecord.path,
+                    FileRecord.is_directory,
+                    FileRecord.size,
+                    FileRecord.extension,
+                    FileRecord.modified_time
+                ).filter(
+                    FileRecord.parent_path == parent_path,
+                    FileRecord.scan_id == scan_id
+                ).all()
+                
+                if not children:
+                    continue
+                
+                # Calculate sizes and create items list
+                items = []
+                
+                for child in children:
+                    if child.is_directory:
+                        # Get total size from FolderInfo
+                        folder_info = FolderInfo.query.filter(
+                            FolderInfo.path == child.path,
+                            FolderInfo.scan_id == scan_id
+                        ).first()
+                        
+                        if folder_info and folder_info.total_size > 0:
+                            items.append({
+                                'id': child.id,
+                                'name': child.name,
+                                'path': child.path,
+                                'is_directory': True,
+                                'size': folder_info.total_size,
+                                'file_count': folder_info.file_count,
+                                'directory_count': folder_info.directory_count,
+                                'extension': None,
+                                'modified_time': None
+                            })
+                        else:
+                            # Fallback calculation for directories without FolderInfo
+                            child_totals = db.session.query(
+                                func.sum(FileRecord.size).label('total_size'),
+                                func.count(FileRecord.id).label('file_count')
+                            ).filter(
+                                FileRecord.path.like(f"{child.path}/%"),
+                                FileRecord.scan_id == scan_id
+                            ).first()
+                            
+                            if child_totals and child_totals.total_size:
+                                items.append({
+                                    'id': child.id,
+                                    'name': child.name,
+                                    'path': child.path,
+                                    'is_directory': True,
+                                    'size': child_totals.total_size,
+                                    'file_count': child_totals.file_count,
+                                    'directory_count': 0,
+                                    'extension': None,
+                                    'modified_time': None
+                                })
+                    else:
+                        # For files, use direct size
+                        items.append({
+                            'id': child.id,
+                            'name': child.name,
+                            'path': child.path,
+                            'is_directory': False,
+                            'size': child.size,
+                            'file_count': 0,
+                            'directory_count': 0,
+                            'extension': child.extension,
+                            'modified_time': child.modified_time
+                        })
+                
+                # Sort by size and take top N
+                items.sort(key=lambda x: x['size'], reverse=True)
+                top_items = items[:max_items_per_folder]
+                
+                # Store in database
+                for sort_order, item in enumerate(top_items, 1):
+                    dir_child = DirectoryChildren(
+                        parent_path=parent_path,
+                        child_path=item['path'],
+                        child_name=item['name'],
+                        child_id=item['id'],
+                        is_directory=item['is_directory'],
+                        size=item['size'],
+                        file_count=item['file_count'],
+                        directory_count=item['directory_count'],
+                        extension=item['extension'],
+                        modified_time=item['modified_time'],
+                        sort_order=sort_order,
+                        scan_id=scan_id
+                    )
+                    db.session.add(dir_child)
+                
+                processed_count += 1
+                
+                # Commit in batches for better performance
+                if processed_count % 100 == 0:
+                    db.session.commit()
+                    logger.info(f"Processed {processed_count}/{len(directories_with_children)} directories")
+                    
+            except Exception as e:
+                logger.error(f"Error processing directory {parent_path}: {e}")
+                continue
+        
+        # Final commit
+        logger.info("Committing final directory children calculations...")
+        db.session.commit()
+        logger.info(f"Directory children calculated and stored for scan {scan_id}: {processed_count} directories processed")
+        logger.info(f"=== DIRECTORY CHILDREN CALCULATION COMPLETE ===")
+        
+    except Exception as e:
+        logger.error(f"Error in calculate_directory_children_during_scan: {e}")
         db.session.rollback()
         raise
 
@@ -2267,9 +2450,45 @@ def get_directory_children(directory_id):
         
         max_items = int(get_setting('max_items_per_folder', '100'))
         
-        # Strategy: Get the true top N largest items by using a more intelligent approach
-        # We'll get a larger sample from each category to ensure we don't miss items
-        # that should be in the overall top N
+        # Try to get pre-calculated directory children first (fast path)
+        pre_calculated_children = DirectoryChildren.query.filter(
+            DirectoryChildren.parent_path == directory.path,
+            DirectoryChildren.scan_id == latest_scan.id
+        ).order_by(DirectoryChildren.sort_order).limit(max_items).all()
+        
+        if pre_calculated_children:
+            # Use pre-calculated data for instant response
+            result = []
+            for child in pre_calculated_children:
+                if child.is_directory:
+                    result.append({
+                        'id': child.child_id,
+                        'name': child.child_name,
+                        'path': child.child_path,
+                        'size': child.size,
+                        'size_formatted': format_size(child.size),
+                        'file_count': child.file_count,
+                        'directory_count': child.directory_count,
+                        'is_directory': True,
+                        'children': []
+                    })
+                else:
+                    result.append({
+                        'id': child.child_id,
+                        'name': child.child_name,
+                        'path': child.child_path,
+                        'size': child.size,
+                        'size_formatted': format_size(child.size),
+                        'extension': child.extension,
+                        'modified_time': child.modified_time.isoformat() if child.modified_time else None,
+                        'is_directory': False
+                    })
+            
+            logger.info(f"Using pre-calculated data for directory {directory.path}: {len(result)} items")
+            return jsonify({'children': result})
+        
+        # Fallback to on-demand calculation if pre-calculated data not available
+        logger.info(f"No pre-calculated data found for {directory.path}, calculating on-demand...")
         
         # Get a larger sample of files to ensure we don't miss any that should be in top N
         file_sample_size = max_items * 2  # Get 2x the limit to be safe
@@ -2388,7 +2607,7 @@ def get_directory_children(directory_id):
         result.sort(key=lambda x: x['size'], reverse=True)
         result = result[:max_items]
         
-        logger.info(f"Returning {len(result)} items for directory {directory.path}")
+        logger.info(f"Returning {len(result)} items for directory {directory.path} (on-demand calculation)")
         return jsonify({'children': result})
     except Exception as e:
         logger.error(f"Error getting directory children: {e}")
