@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, desc, case
+from sqlalchemy import func, desc, case, and_, literal
 from sqlalchemy.exc import OperationalError
 from pathlib import Path
 from functools import wraps
@@ -2268,77 +2268,94 @@ def get_directory_children(directory_id):
         # Get the limit from settings (default 100)
         max_items = int(get_setting('max_items_per_folder', '100'))
         
-        # Get all direct children (both files and directories) - no limit here
-        children = db.session.query(
+        # Strategy: Get the largest items efficiently by using a UNION of:
+        # 1. Top N largest files (by direct size)
+        # 2. Top N largest directories (by FolderInfo total_size)
+        # Then sort and take the top N overall
+        
+        # Get top N largest files
+        largest_files = db.session.query(
             FileRecord.name,
             FileRecord.path,
             FileRecord.id,
             FileRecord.is_directory,
             FileRecord.size,
             FileRecord.extension,
-            FileRecord.modified_time
+            FileRecord.modified_time,
+            literal(False).label('is_from_folder_info'),
+            literal(0).label('file_count'),
+            literal(0).label('directory_count')
         ).filter(
             FileRecord.parent_path == directory.path,
-            FileRecord.scan_id == latest_scan.id
-        ).all()
+            FileRecord.scan_id == latest_scan.id,
+            FileRecord.is_directory == False
+        ).order_by(FileRecord.size.desc()).limit(max_items).all()
         
+        # Get top N largest directories using FolderInfo (pre-calculated totals)
+        largest_directories = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory,
+            FileRecord.size,
+            literal('').label('extension'),
+            literal(None).label('modified_time'),
+            literal(True).label('is_from_folder_info'),
+            FolderInfo.file_count,
+            FolderInfo.directory_count
+        ).join(
+            FolderInfo, 
+            and_(
+                FileRecord.path == FolderInfo.path,
+                FileRecord.scan_id == FolderInfo.scan_id
+            )
+        ).filter(
+            FileRecord.parent_path == directory.path,
+            FileRecord.scan_id == latest_scan.id,
+            FileRecord.is_directory == True,
+            FolderInfo.total_size > 0
+        ).order_by(FolderInfo.total_size.desc()).limit(max_items).all()
+        
+        # Combine and sort by actual size
         result = []
-        for child in children:
-            if child.is_directory:
-                # Get comprehensive folder info
-                folder_info = FolderInfo.query.filter(
-                    FolderInfo.path == child.path,
-                    FolderInfo.scan_id == latest_scan.id
-                ).first()
-                
-                if folder_info and folder_info.total_size > 0:
-                    result.append({
-                        'id': child.id,
-                        'name': child.name,
-                        'path': child.path,
-                        'size': folder_info.total_size,
-                        'size_formatted': format_size(folder_info.total_size),
-                        'file_count': folder_info.file_count,
-                        'directory_count': folder_info.directory_count,
-                        'is_directory': True,
-                        'children': []
-                    })
-                else:
-                    # Fallback calculation
-                    child_totals = db.session.query(
-                        func.sum(FileRecord.size).label('total_size'),
-                        func.count(FileRecord.id).label('file_count')
-                    ).filter(
-                        FileRecord.path.like(f"{child.path}/%"),
-                        FileRecord.scan_id == latest_scan.id
-                    ).first()
-                    
-                    result.append({
-                        'id': child.id,
-                        'name': child.name,
-                        'path': child.path,
-                        'size': child_totals.total_size or 0,
-                        'size_formatted': format_size(child_totals.total_size or 0),
-                        'file_count': child_totals.file_count or 0,
-                        'directory_count': 0,  # Would need separate query
-                        'is_directory': True
-                    })
-            else:
-                # For files, use the file's own size
+        
+        # Process files (use direct size)
+        for file_record in largest_files:
+            result.append({
+                'id': file_record.id,
+                'name': file_record.name,
+                'path': file_record.path,
+                'size': file_record.size,
+                'size_formatted': format_size(file_record.size),
+                'extension': file_record.extension,
+                'modified_time': file_record.modified_time.isoformat() if file_record.modified_time else None,
+                'is_directory': False
+            })
+        
+        # Process directories (use FolderInfo total_size)
+        for dir_record in largest_directories:
+            # Get the actual total size from FolderInfo
+            folder_info = FolderInfo.query.filter(
+                FolderInfo.path == dir_record.path,
+                FolderInfo.scan_id == latest_scan.id
+            ).first()
+            
+            if folder_info and folder_info.total_size > 0:
                 result.append({
-                    'id': child.id,
-                    'name': child.name,
-                    'path': child.path,
-                    'size': child.size,
-                    'size_formatted': format_size(child.size),
-                    'extension': child.extension,
-                    'modified_time': child.modified_time.isoformat() if child.modified_time else None,
-                    'is_directory': False
+                    'id': dir_record.id,
+                    'name': dir_record.name,
+                    'path': dir_record.path,
+                    'size': folder_info.total_size,
+                    'size_formatted': format_size(folder_info.total_size),
+                    'file_count': folder_info.file_count,
+                    'directory_count': folder_info.directory_count,
+                    'is_directory': True,
+                    'children': []
                 })
         
-        # Sort by total size (directories) or file size (files), then limit to top items
+        # Sort by size and take top N
         result.sort(key=lambda x: x['size'], reverse=True)
-        result = result[:max_items]  # Now limit to top items after sorting by actual total sizes
+        result = result[:max_items]
         
         return jsonify({'children': result})
     except Exception as e:
