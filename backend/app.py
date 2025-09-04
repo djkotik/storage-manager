@@ -736,6 +736,19 @@ def scan_directory(data_path, scan_id):
                 # Continue with the scan even if folder totals fail
                 logger.warning("Continuing scan without folder totals...")
             
+            # Calculate directory children for instant Usage Explorer loading
+            logger.info("Calculating directory children...")
+            try:
+                max_items = int(get_setting('max_items_per_folder', '100'))
+                calculate_directory_children_during_scan(scan_id, max_items)
+                logger.info("Directory children calculated successfully")
+            except Exception as e:
+                logger.error(f"Error calculating directory children: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error details: {str(e)}")
+                # Continue with the scan even if directory children fail
+                logger.warning("Continuing scan without directory children calculation...")
+            
             # Detect duplicates
             logger.info("Starting duplicate detection...")
             detect_duplicates(scan_id)
@@ -3596,6 +3609,30 @@ def manual_calculate_totals():
         })
     except Exception as e:
         logger.error(f"Error in manual_calculate_totals: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug/calculate-children', methods=['POST'])
+def manual_calculate_children():
+    """Manually trigger directory children calculation for debugging"""
+    try:
+        # Get the latest completed scan
+        latest_scan = ScanRecord.query.filter(
+            ScanRecord.status == 'completed'
+        ).order_by(ScanRecord.start_time.desc()).first()
+        
+        if not latest_scan:
+            return jsonify({'error': 'No completed scan found'}), 400
+        
+        max_items = int(get_setting('max_items_per_folder', '100'))
+        logger.info(f"Manually calculating directory children for scan {latest_scan.id}")
+        calculate_directory_children_during_scan(latest_scan.id, max_items)
+        
+        return jsonify({
+            'message': f'Directory children calculated for scan {latest_scan.id}',
+            'scan_id': latest_scan.id
+        })
+    except Exception as e:
+        logger.error(f"Error in manual_calculate_children: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/debug/database/unlock', methods=['POST'])
