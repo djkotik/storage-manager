@@ -2311,6 +2311,49 @@ def get_directory_children(directory_id):
             FolderInfo.total_size > 0
         ).order_by(FolderInfo.total_size.desc()).limit(dir_sample_size).all()
         
+        # Also get directories that might not have FolderInfo records (fallback)
+        fallback_directories = db.session.query(
+            FileRecord.name,
+            FileRecord.path,
+            FileRecord.id,
+            FileRecord.is_directory,
+            FileRecord.size
+        ).filter(
+            FileRecord.parent_path == directory.path,
+            FileRecord.scan_id == latest_scan.id,
+            FileRecord.is_directory == True
+        ).all()
+        
+        # Create a set of directories we already have from FolderInfo
+        processed_dirs = {dir_record.path for dir_record in largest_directories}
+        
+        # Add fallback directories that don't have FolderInfo records
+        for fallback_dir in fallback_directories:
+            if fallback_dir.path not in processed_dirs:
+                # Calculate size manually for this directory
+                child_totals = db.session.query(
+                    func.sum(FileRecord.size).label('total_size'),
+                    func.count(FileRecord.id).label('file_count')
+                ).filter(
+                    FileRecord.path.like(f"{fallback_dir.path}/%"),
+                    FileRecord.scan_id == latest_scan.id
+                ).first()
+                
+                if child_totals and child_totals.total_size:
+                    largest_directories.append(type('obj', (object,), {
+                        'name': fallback_dir.name,
+                        'path': fallback_dir.path,
+                        'id': fallback_dir.id,
+                        'is_directory': True,
+                        'size': fallback_dir.size,
+                        'total_size': child_totals.total_size,
+                        'file_count': child_totals.file_count,
+                        'directory_count': 0
+                    })())
+        
+        # Log debugging information
+        logger.info(f"Directory {directory.path}: Found {len(largest_files)} files and {len(largest_directories)} directories")
+        
         # Combine and sort by actual size
         result = []
         
@@ -2327,16 +2370,16 @@ def get_directory_children(directory_id):
                 'is_directory': False
             })
         
-        # Process directories (use FolderInfo total_size)
+        # Process directories (use FolderInfo total_size or calculated total_size)
         for dir_record in largest_directories:
             result.append({
                 'id': dir_record.id,
                 'name': dir_record.name,
                 'path': dir_record.path,
-                'size': dir_record.total_size,
-                'size_formatted': format_size(dir_record.total_size),
-                'file_count': dir_record.file_count,
-                'directory_count': dir_record.directory_count,
+                'size': getattr(dir_record, 'total_size', dir_record.size),
+                'size_formatted': format_size(getattr(dir_record, 'total_size', dir_record.size)),
+                'file_count': getattr(dir_record, 'file_count', 0),
+                'directory_count': getattr(dir_record, 'directory_count', 0),
                 'is_directory': True,
                 'children': []
             })
@@ -2345,6 +2388,7 @@ def get_directory_children(directory_id):
         result.sort(key=lambda x: x['size'], reverse=True)
         result = result[:max_items]
         
+        logger.info(f"Returning {len(result)} items for directory {directory.path}")
         return jsonify({'children': result})
     except Exception as e:
         logger.error(f"Error getting directory children: {e}")
