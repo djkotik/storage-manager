@@ -948,31 +948,49 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
         db.session.commit()
         logger.info(f"Existing directory children cleared {datetime.now()}")
         
-        # Get all directories that have children
+        # Get all directories that have children - optimized query
         logger.info(f"Fetching directories with children... {datetime.now()}")
+        
+        # First get all parent paths that have children
+        logger.info(f"Getting parent paths with children... {datetime.now()}")
+        parent_paths_with_children = db.session.query(
+            FileRecord.parent_path
+        ).filter(
+            FileRecord.scan_id == scan_id,
+            FileRecord.parent_path.isnot(None)
+        ).distinct().all()
+        
+        parent_paths = [p.parent_path for p in parent_paths_with_children]
+        logger.info(f"Found {len(parent_paths)} parent paths with children {datetime.now()}")
+        
+        # Now get directories that match these parent paths
+        logger.info(f"Getting directories matching parent paths... {datetime.now()}")
         directories_with_children = db.session.query(
-            FileRecord.path.distinct().label('parent_path')
+            FileRecord.path.label('parent_path')
         ).filter(
             FileRecord.scan_id == scan_id,
             FileRecord.is_directory == True,
-            FileRecord.path.in_(
-                db.session.query(FileRecord.parent_path).filter(
-                    FileRecord.scan_id == scan_id,
-                    FileRecord.parent_path.isnot(None)
-                ).distinct()
-            )
-        ).all()
+            FileRecord.path.in_(parent_paths)
+        ).distinct().all()
         
         logger.info(f"Found {len(directories_with_children)} directories with children to process {datetime.now()}")
+        
+        # Limit processing to prevent hanging on very large datasets
+        max_directories_to_process = 1000
+        if len(directories_with_children) > max_directories_to_process:
+            logger.info(f"Limiting processing to first {max_directories_to_process} directories to prevent timeout")
+            directories_with_children = directories_with_children[:max_directories_to_process]
         
         processed_count = 0
         for i, parent_dir in enumerate(directories_with_children):
             parent_path = parent_dir.parent_path
-            logger.info(f"Processing parent directory {i+1}/{len(directories_with_children)}: {parent_path} {datetime.now()}")
+            
+            # Log progress every 10 directories
+            if (i + 1) % 10 == 0 or i == 0:
+                logger.info(f"Processing parent directory {i+1}/{len(directories_with_children)}: {parent_path} {datetime.now()}")
             
             try:
                 # Get all direct children (files and directories)
-                logger.info(f"  Querying children for {parent_path}... {datetime.now()}")
                 children = db.session.query(
                     FileRecord.id,
                     FileRecord.name,
@@ -985,13 +1003,11 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
                     FileRecord.parent_path == parent_path,
                     FileRecord.scan_id == scan_id
                 ).all()
-                logger.info(f"  Found {len(children)} children for {parent_path} {datetime.now()}")
                 
                 if not children:
                     continue
                 
                 # Calculate sizes and create items list
-                logger.info(f"  Processing {len(children)} children for {parent_path}... {datetime.now()}")
                 items = []
                 
                 for child in children:
