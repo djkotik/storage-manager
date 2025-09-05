@@ -952,15 +952,15 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
         logger.info(f"Fetching directories with children... {datetime.now()}")
         directories_with_children = db.session.query(
             FileRecord.path.distinct().label('parent_path')
-        ).join(
-            FileRecord, 
-            and_(
-                FileRecord.parent_path == FileRecord.path,
-                FileRecord.scan_id == scan_id
-            )
         ).filter(
             FileRecord.scan_id == scan_id,
-            FileRecord.is_directory == True
+            FileRecord.is_directory == True,
+            FileRecord.path.in_(
+                db.session.query(FileRecord.parent_path).filter(
+                    FileRecord.scan_id == scan_id,
+                    FileRecord.parent_path.isnot(None)
+                ).distinct()
+            )
         ).all()
         
         logger.info(f"Found {len(directories_with_children)} directories with children to process {datetime.now()}")
