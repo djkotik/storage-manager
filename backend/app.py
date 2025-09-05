@@ -975,11 +975,27 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
         
         logger.info(f"Found {len(directories_with_children)} directories with children to process {datetime.now()}")
         
-        # Limit processing to prevent hanging on very large datasets
+        # Prioritize important directories (movies, tv shows, etc.) and limit processing
         max_directories_to_process = 1000
         if len(directories_with_children) > max_directories_to_process:
-            logger.info(f"Limiting processing to first {max_directories_to_process} directories to prevent timeout")
+            logger.info(f"Prioritizing important directories from {len(directories_with_children)} total directories")
+            
+            # Sort directories to prioritize important ones
+            important_paths = ['/data/movies', '/data/tv shows', '/data/music', '/data/photos', '/data/videos']
+            prioritized_dirs = []
+            remaining_dirs = []
+            
+            for dir_obj in directories_with_children:
+                if any(important_path in dir_obj.parent_path for important_path in important_paths):
+                    prioritized_dirs.append(dir_obj)
+                else:
+                    remaining_dirs.append(dir_obj)
+            
+            # Take important directories first, then fill with others
+            directories_with_children = prioritized_dirs + remaining_dirs
             directories_with_children = directories_with_children[:max_directories_to_process]
+            
+            logger.info(f"Selected {len(directories_with_children)} directories for processing (prioritized important ones)")
         
         processed_count = 0
         for i, parent_dir in enumerate(directories_with_children):
