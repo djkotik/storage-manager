@@ -976,17 +976,24 @@ def calculate_directory_children_during_scan(scan_id, max_items_per_folder=100):
         logger.info(f"Found {len(directories_with_children)} directories with children to process {datetime.now()}")
         
         # Prioritize important directories (movies, tv shows, etc.) and limit processing
-        max_directories_to_process = 1000
+        max_directories_to_process = 5000  # Increased from 1000 to handle larger storage systems
         if len(directories_with_children) > max_directories_to_process:
             logger.info(f"Prioritizing important directories from {len(directories_with_children)} total directories")
             
-            # Sort directories to prioritize important ones
-            important_paths = ['/data/movies', '/data/tv shows', '/data/music', '/data/photos', '/data/videos']
+            # Sort directories to prioritize important ones - more flexible path matching
+            important_paths = [
+                'movies', 'tv shows', 'tv', 'television', 'shows', 'series',
+                'music', 'audio', 'songs', 'albums',
+                'photos', 'pictures', 'images', 'pics',
+                'videos', 'films', 'media', 'downloads',
+                'documents', 'docs', 'files', 'data'
+            ]
             prioritized_dirs = []
             remaining_dirs = []
             
             for dir_obj in directories_with_children:
-                if any(important_path in dir_obj.parent_path for important_path in important_paths):
+                # Check if any important path is in the directory path (case insensitive)
+                if any(important_path.lower() in dir_obj.parent_path.lower() for important_path in important_paths):
                     prioritized_dirs.append(dir_obj)
                 else:
                     remaining_dirs.append(dir_obj)

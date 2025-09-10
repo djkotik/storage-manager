@@ -100,6 +100,7 @@ const Files: React.FC = () => {
   const [deleting, setDeleting] = useState(false)
   const [scanStatus, setScanStatus] = useState<ScanStatus>({ status: 'idle', scanning: false })
   const [maxItemsPerFolder, setMaxItemsPerFolder] = useState<string>('100')
+  const [optimizing, setOptimizing] = useState(false)
 
   useEffect(() => {
     fetchFileTree()
@@ -263,6 +264,28 @@ const Files: React.FC = () => {
       setMaxItemsPerFolder(response.data.max_items_per_folder || '100')
     } catch (error) {
       console.error('Error fetching settings:', error)
+    }
+  }
+
+  const optimizePerformance = async () => {
+    try {
+      setOptimizing(true)
+      
+      // First calculate folder totals
+      await axios.post('/api/debug/calculate-totals')
+      
+      // Then calculate directory children for instant loading
+      await axios.post('/api/debug/calculate-children')
+      
+      // Refresh the file tree to show the optimized data
+      await fetchFileTree()
+      
+      alert('Performance optimization completed! Folder expansion should now be much faster.')
+    } catch (error) {
+      console.error('Error optimizing performance:', error)
+      alert('Failed to optimize performance. Please try again.')
+    } finally {
+      setOptimizing(false)
     }
   }
 
@@ -460,15 +483,32 @@ const Files: React.FC = () => {
           <p className="text-gray-600 dark:text-gray-400">
             Explore your storage structure and space usage
           </p>
+          <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+            Currently displaying the top {maxItemsPerFolder} largest items as per Settings
+          </p>
         </div>
         
-        <button
-          onClick={fetchFileTree}
-          className="btn btn-secondary px-4 py-2"
-        >
-          <HardDrive className="h-4 w-4 mr-2" />
-          Refresh
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={fetchFileTree}
+            className="btn btn-secondary px-4 py-2"
+          >
+            <HardDrive className="h-4 w-4 mr-2" />
+            Refresh
+          </button>
+          <button
+            onClick={optimizePerformance}
+            className="btn btn-primary px-4 py-2"
+            disabled={optimizing}
+          >
+            {optimizing ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            ) : (
+              <HardDrive className="h-4 w-4 mr-2" />
+            )}
+            {optimizing ? 'Optimizing...' : 'Optimize Performance'}
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -480,6 +520,20 @@ const Files: React.FC = () => {
               Storage Structure
               {maxItemsPerFolder !== '100' && ` - Limited to ${maxItemsPerFolder} largest items per folder as per Settings`}
             </h3>
+            
+            {/* Performance optimization notice */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 dark:bg-blue-900/20 dark:border-blue-800">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <HardDrive className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Performance Tip:</strong> If folder expansion is slow, click "Optimize Performance" to pre-calculate directory data for instant loading.
+                  </p>
+                </div>
+              </div>
+            </div>
 
             {/* Scan Status Indicator */}
             {scanStatus.scanning ? (
